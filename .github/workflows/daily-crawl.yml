@@ -1,0 +1,248 @@
+name: Daily AI News Crawl with LLM
+
+on:
+  # schedule:
+  #   - cron: '0 0,4,8,12,16,20 * * *'  # Runs 6 times daily every 4 hours (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+  workflow_dispatch:  # Manual trigger for testing
+  push:
+    branches: [main]  # Also run on pushes to main for testing
+
+
+jobs:
+  crawl-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45  # Allow time(minutes) for model downloads
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    permissions:
+      contents: write  # Allow pushing changes
+      pages: write     # Allow GitHub Pages deployment
+      id-token: write  # Required for pages deployment
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: |
+          npm ci
+          echo "Dependencies installed"
+          
+      - name: Create directories
+        run: |
+          mkdir -p data
+          mkdir -p site
+          mkdir -p .cache
+          
+      - name: Crawl RSS feeds
+        run: |
+          echo "🤖 Starting RSS crawl..."
+          node scripts/crawl.js
+          echo "Crawl completed"
+          
+      - name: Process with AI categorization
+        env:
+          PROCESSING_LIMIT: 250  # Process only 200 articles to avoid GitHub timeout
+        run: |
+          echo "🧠 Processing articles with AI (limited to 200 articles)..."
+          node scripts/process-clean.js
+          echo "AI processing completed"
+          
+      - name: Cleanup old data files (15-day rolling archive)
+        run: |
+          # Keep only last 15 days of date-specific data files
+          echo "🧹 Cleaning up data files older than 15 days..."
+          
+          # Calculate cutoff date (15 days ago)
+          CUTOFF_DATE=$(date -d "15 days ago" +%Y-%m-%d)
+          echo "🗓️ Cutoff date for cleanup: $CUTOFF_DATE"
+          
+          # Find and delete old data files based on filename date
+          find data/ -name "20*-*-processed.json" -type f | while read file; do
+            # Extract date from filename (e.g., 2025-06-30-processed.json -> 2025-06-30)
+            filename=$(basename "$file")
+            file_date=${filename%-processed.json}
+            
+            # Compare dates (string comparison works for YYYY-MM-DD format)
+            if [[ "$file_date" < "$CUTOFF_DATE" ]]; then
+              echo "Deleting old file: $file (date: $file_date)"
+              rm -f "$file"
+            fi
+          done
+          
+          # Also clean up corresponding site data files
+          find site/data/ -name "20*-*.json" -type f | while read file; do
+            filename=$(basename "$file")
+            file_date=${filename%.json}
+            
+            if [[ "$file_date" < "$CUTOFF_DATE" ]]; then
+              echo "Deleting old site file: $file (date: $file_date)"
+              rm -f "$file"
+            fi
+          done
+          
+          echo "✅ Rolling cleanup completed (15-day archive maintained)"
+          
+      - name: Build static site
+        run: |
+          echo "🏗️ Building static site..."
+          node scripts/build-site.js
+          echo "Site build completed"
+          
+      - name: Generate sitemap
+        run: |
+          echo "🗺️ Generating sitemap..."
+          cat > site/sitemap.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url>
+              <loc>https://ai-news-daily.github.io/</loc>
+              <changefreq>daily</changefreq>
+              <priority>1.0</priority>
+              <lastmod>$(date -u +%Y-%m-%dT%H:%M:%S+00:00)</lastmod>
+            </url>
+          </urlset>
+          EOF
+          
+      - name: Generate robots.txt
+        run: |
+          cat > site/robots.txt << 'EOF'
+          User-agent: *
+          Allow: /
+          
+          Sitemap: https://ai-news-daily.github.io/sitemap.xml
+          EOF
+          
+      - name: Optimize and validate
+        run: |
+          # Validate JSON files
+          echo "🔍 Validating data files..."
+          node -e "
+            const fs = require('fs');
+            try {
+              JSON.parse(fs.readFileSync('data/latest-processed.json'));
+              console.log('✅ Data files valid');
+            } catch(e) {
+              console.error('❌ Invalid JSON:', e.message);
+              process.exit(1);
+            }
+          "
+          
+          # Check if we have articles
+          ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-processed.json')).articles.length)")
+          echo "📊 Found $ARTICLE_COUNT articles"
+          
+          if [ "$ARTICLE_COUNT" -lt 10 ]; then
+            echo "⚠️ Warning: Low article count ($ARTICLE_COUNT)"
+          fi
+          
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "ai-news-bot@users.noreply.github.com"
+          git config --local user.name "AI News Bot"
+          
+          # Stash any uncommitted changes (including untracked files) before pulling
+          git stash push -u -m "Auto-stash before pull" || echo "Nothing to stash"
+          
+          # Pull latest changes first to avoid conflicts
+          git pull origin main --rebase || {
+            echo "Failed to pull latest changes, trying merge..."
+            git pull origin main --no-rebase || {
+              echo "Pull failed, continuing with current state..."
+            }
+          }
+          
+          # Pop stashed changes back
+          git stash pop || echo "No stash to pop"
+          
+          # Add all changes including deletions
+          git add data/ site/
+          git add -u  # Stage deletions
+          
+          # Create commit message with stats
+          ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-processed.json')).articles.length)")
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+          
+          # Check what's being committed
+          git status --short
+          
+          git commit -m "🤖 Update AI news - $ARTICLE_COUNT articles - $TIMESTAMP
+
+          📊 Latest: $ARTICLE_COUNT articles processed
+          🗂️ Historical: 15-day rolling archive maintained
+          🚀 Deployed: $(date -u '+%Y-%m-%d %H:%M UTC')" || {
+            echo "No changes to commit"
+            exit 0
+          }
+          
+          # Push changes with retry logic
+          git push || {
+            echo "Push failed, trying with --force-with-lease..."
+            git push --force-with-lease
+          }
+          
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+          
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+          
+      - name: Report status
+        run: |
+          echo "✅ Workflow completed successfully!"
+          echo "📊 Statistics:"
+          node -e "
+            const data = JSON.parse(require('fs').readFileSync('data/latest-processed.json'));
+            console.log(\`Articles: \${data.articles.length}\`);
+            const categoryStats = {};
+            data.articles.forEach(article => {
+              const category = article.category || article.source_category || 'uncategorized';
+              categoryStats[category] = (categoryStats[category] || 0) + 1;
+            });
+            console.log(\`Categories: \${Object.keys(categoryStats).length}\`);
+            console.log(\`AI Processing: \${data.processingMethod || 'completed'}\`);
+          "
+          
+  # Health check job
+  health-check:
+    needs: crawl-and-build
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Check deployment health
+        run: |
+          sleep 60  # Wait for deployment
+          
+          # Check if site is accessible
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://ai-news-daily.github.io/" || echo "000")
+          
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Site is healthy (HTTP $STATUS)"
+          else
+            echo "❌ Site health check failed (HTTP $STATUS)"
+            exit 1
+          fi
+
+          
+# Environment variables for the workflow
+env:
+  NODE_OPTIONS: '--max-old-space-size=4096'  # Increase memory for AI models
+  ORT_LOG_LEVEL: '3'  # Suppress ONNX runtime warnings
+  ONNX_DISABLE_WARNINGS: '1'
+  ONNXRUNTIME_LOG_LEVEL: '3' 
+  CONFIDENCE_THRESHOLD: '0.30'  # AI confidence threshold for article filtering 
