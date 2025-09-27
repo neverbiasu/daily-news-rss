@@ -17,7 +17,6 @@
   "dependencies": {
     "rss-parser": "^3.13.0",
     "axios": "^1.6.0",
-    "@xenova/transformers": "^2.6.0",
     "node-html-parser": "^6.1.0"
   },
   "repository": {
