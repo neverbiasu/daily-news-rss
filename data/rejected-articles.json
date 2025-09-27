@@ -1,0 +1,27 @@
+{
+	"articles": [
+		{
+			"title": "My favorite ChatGPT prompt is: “I want you to keep talking to me and asking me questions until I understand .”",
+			"url": "https://www.reddit.com/r/OpenAI/comments/1nnrmut/my_favorite_chatgpt_prompt_is_i_want_you_to_keep/",
+			"source": "r/OpenAI",
+			"source_domain": "reddit.com",
+			"source_category": "reddit",
+			"source_priority": "high",
+			"pubDate": "2025-09-22T16:43:53.000Z",
+			"metaDescription": "D\n    submitted by    /u/imfrom_mars_  \n [link]   [comments]",
+			"category": null,
+			"difficulty": null,
+			"confidence": 0.20002849246183874,
+			"crawledAt": "2025-09-23T08:32:22.158Z",
+			"id": "rzudcd",
+			"rejectedReason": "low_confidence",
+			"confidenceThreshold": 0.25,
+			"rejected_at": "2025-09-23T08:40:20.264Z"
+		}
+	],
+	"updatedAt": "2025-09-23T08:40:20.327Z",
+	"totalRejected": 2156,
+	"newlyRejected": 23,
+	"cleanupThresholdDays": 15,
+	"cleanedUpCount": 23
+}

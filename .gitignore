@@ -9,7 +9,6 @@ yarn-error.log*
 *.cache
 models/
 
-data/
 site/
 
 # Data files (generated) - track latest and recent (15 days rolling)

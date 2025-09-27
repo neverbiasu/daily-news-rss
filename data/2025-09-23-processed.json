@@ -1,0 +1,33 @@
+{
+	"crawledAt": "2025-09-23T08:33:26.035Z",
+	"totalSources": 70,
+	"totalArticles": 125,
+	"aiFilterUsed": true,
+	"articles": [
+		{
+			"title": "6 days left: Last chance for savings on TechCrunch Disrupt 2025 passes",
+			"url": "https://techcrunch.com/2025/09/21/6-days-left-last-chance-for-savings-on-techcrunch-disrupt-2025-passes/",
+			"source": "TechCrunch AI",
+			"source_domain": "techcrunch.com",
+			"source_category": "news",
+			"source_priority": "high",
+			"pubDate": "2025-09-21T14:00:00.000Z",
+			"metaDescription": "Time’s ticking! Register by September 26 at 11:59 p.m. PT to lock savings up to $668 on your pass to TechCrunch Disrupt 2025, happening at San Francisco's Moscone West on October 27-29.",
+			"category": "creative-ai",
+			"difficulty": 3,
+			"confidence": 0.29003417338062776,
+			"crawledAt": "2025-09-23T01:47:03.370Z",
+			"id": "z37f6a",
+			"entities": [],
+			"summary": "TechCrunch Disrupt 2025 is happening at San Francisco's Moscone West on October 27-29. The event will take place in San Francisco, San Francisco.",
+			"language": "en",
+			"processed_at": "2025-09-23T01:57:17.538Z"
+		}
+	],
+	"processedAt": "2025-09-23T08:40:20.287Z",
+	"categories": ["creative-ai", "ai-agents", "infrastructure", "model-release", "safety-ethics", "product-launch", "developer-tool", "research-paper", "tutorial-guide", "industry-news"],
+	"processingMethod": "ai-powered",
+	"newArticlesProcessed": 29,
+	"dailyArticlesCount": 125,
+	"filterDate": "2025-09-23"
+}

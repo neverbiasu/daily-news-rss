@@ -1,0 +1,44 @@
+{
+	"crawledAt": "2025-09-23T08:33:26.035Z",
+	"totalSources": 70,
+	"totalArticles": 2930,
+	"aiFilterUsed": true,
+	"articles": [
+		{
+			"title": "Will you use this new Qwen3-ASR?",
+			"url": "https://www.reddit.com/r/LocalLLaMA/comments/1nbqb3o/will_you_use_this_new_qwen3asr/",
+			"source": "r/LocalLLaMA",
+			"source_domain": "reddit.com",
+			"source_category": "reddit",
+			"source_priority": "high",
+			"pubDate": "2025-09-08T15:09:21.000Z",
+			"metaDescription": "Supporting 11 languages \n    submitted by    /u/LuozhuZhang  \n [link]   [comments]",
+			"category": "infrastructure",
+			"difficulty": 4,
+			"confidence": 0.47387614450451965,
+			"crawledAt": "2025-09-08T20:27:13.734Z",
+			"id": "6cnzvy",
+			"entities": [
+				{
+					"entity": "B-MISC",
+					"score": 0.9695127606391907,
+					"index": 6,
+					"word": "Q",
+					"start": null,
+					"end": null
+				}
+			],
+			"summary": "Announcement or discussion about new AI model releases and updates.",
+			"language": "en",
+			"processed_at": "2025-09-08T20:37:57.834Z"
+		}
+	],
+	"processedAt": "2025-09-23T08:40:20.271Z",
+	"categories": ["creative-ai", "ai-agents", "infrastructure", "model-release", "safety-ethics", "product-launch", "developer-tool", "research-paper", "tutorial-guide", "industry-news"],
+	"processingMethod": "ai-powered",
+	"newArticlesProcessed": 29,
+	"existingArticlesKept": 2927,
+	"cleanupApplied": true,
+	"cleanedUpCount": 26,
+	"rollingWindowDays": 15
+}
