@@ -151,23 +151,22 @@ async function crawlFeed(source, stats = null) {
 			if (pubDate < cutoffDate) continue
 
 			articles.push({
+				id: generateId(title, url),
+
+				// article
 				title: title,
 				url: url,
+				author: item.author || '',
+				content: item.content || '',
+				pubDate: pubDate.toISOString(),
+				metaDescription: description,
+				crawledAt: new Date().toISOString(),
+
+				// source
 				source: source.name,
 				source_domain: extractDomain(url),
 				source_category: source.category,
-				source_priority: source.priority,
-				pubDate: pubDate.toISOString(),
-				metaDescription: description,
-
-				// Will be filled by LLM processing
-				category: null,
-				difficulty: null,
-				confidence: null,
-
-				// Metadata
-				crawledAt: new Date().toISOString(),
-				id: generateId(title, url)
+				source_priority: source.priority
 			})
 		}
 

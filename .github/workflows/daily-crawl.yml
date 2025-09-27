@@ -99,9 +99,7 @@ jobs:
                   # Check what's being committed
                   git status --short
 
-                  git commit -m "
-                  🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP
-                  📊 Latest: $ARTICLE_COUNT articles processed" || {
+                  git commit -m "🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP" || {
                     echo "No changes to commit"
                     exit 0
                   }

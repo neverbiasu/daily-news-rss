@@ -166,13 +166,14 @@ try {
 
 		console.log('📄 First article details:')
 		const firstItem = feed.items[0]
-		console.log('contentSnippet:', firstItem.contentSnippet)
+
+		// console.log('contentSnippet:', firstItem.contentSnippet)
 		console.log('content:', firstItem.content)
-		console.log('Title:', firstItem.title)
-		console.log('Link:', firstItem.link)
-		console.log('Published:', firstItem.pubDate)
-		console.log('Author:', firstItem.author)
-		console.log('Summary:', firstItem.summary)
+		// console.log('Title:', firstItem.title)
+		// console.log('Link:', firstItem.link)
+		// console.log('Published:', firstItem.pubDate)
+		// console.log('Author:', firstItem.author)
+		// console.log('Summary:', firstItem.summary)
 		console.log('isoDate:', firstItem.isoDate)
 		console.log()
 	}
