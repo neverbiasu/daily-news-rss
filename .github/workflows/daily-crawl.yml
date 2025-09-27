@@ -1,4 +1,4 @@
-name: Daily AI News Crawl with LLM
+name: Daily News Crawl
 
 on:
     # schedule:
@@ -69,6 +69,49 @@ jobs:
                     echo "⚠️ Warning: Low article count ($ARTICLE_COUNT)"
                   fi
 
+            - name: Commit and push changes
+              run: |
+                  git config --local user.email "zhangluo-bot@users.noreply.github.com"
+                  git config --local user.name "zhangluo Bot"
+
+                  # Stash any uncommitted changes (including untracked files) before pulling
+                  git stash push -u -m "Auto-stash before pull" || echo "Nothing to stash"
+
+                  # Pull latest changes first to avoid conflicts
+                  git pull origin main --rebase || {
+                    echo "Failed to pull latest changes, trying merge..."
+                    git pull origin main --no-rebase || {
+                      echo "Pull failed, continuing with current state..."
+                    }
+                  }
+
+                  # Pop stashed changes back
+                  git stash pop || echo "No stash to pop"
+
+                  # Add all changes including deletions
+                  git add data/
+                  git add -u  # Stage deletions
+
+                  # Create commit message with stats
+                  ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
+                  TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+                  # Check what's being committed
+                  git status --short
+
+                  git commit -m "
+                  🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP
+                  📊 Latest: $ARTICLE_COUNT articles processed" || {
+                    echo "No changes to commit"
+                    exit 0
+                  }
+
+                  # Push changes with retry logic
+                  git push || {
+                    echo "Push failed, trying with --force-with-lease..."
+                    git push --force-with-lease
+                  }
+
             - name: Report status
               run: |
                   echo "✅ Workflow completed successfully!"
@@ -80,8 +123,4 @@ jobs:
 
 # Environment variables for the workflow
 env:
-    NODE_OPTIONS: '--max-old-space-size=4096' # Increase memory for AI models
-    ORT_LOG_LEVEL: '3' # Suppress ONNX runtime warnings
-    ONNX_DISABLE_WARNINGS: '1'
-    ONNXRUNTIME_LOG_LEVEL: '3'
-    CONFIDENCE_THRESHOLD: '0.30' # AI confidence threshold for article filtering
+    ENV_TEST: 'test' # a sample variable for testing

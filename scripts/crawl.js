@@ -40,7 +40,7 @@ function cleanTitle(title) {
 
 // Main crawl function
 async function crawlAllSources() {
-	console.log('🤖 Starting AI news crawl...')
+	console.log('🤖 Starting crawl...')
 
 	const sources = await loadSources()
 	console.log(`Found ${sources.length} sources to crawl`)
@@ -73,8 +73,7 @@ async function crawlAllSources() {
 	// Sort by publication date (newest first)
 	uniqueArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
 
-	console.log(`📰 Found ${uniqueArticles.length} unique AI articles`)
-	console.log(`🔍 Using keyword-based filtering`)
+	console.log(`📰 Found ${uniqueArticles.length} unique articles`)
 	console.log(`📊 Crawl stats: ${crawlStats.totalProcessed} processed → ${uniqueArticles.length} kept (${crawlStats.filtered} filtered)`)
 
 	// Ensure data directory exists
@@ -111,6 +110,7 @@ async function crawlFeed(source, stats = null) {
 		// articles length limit
 		const itemLimit = 10
 		const items = feed.items.slice(0, itemLimit)
+		console.log(`itemLimit: ${itemLimit} items length: ${items.length}`)
 
 		for (const item of items) {
 			const title = cleanTitle(item.title || '')
@@ -171,7 +171,7 @@ async function crawlFeed(source, stats = null) {
 			})
 		}
 
-		console.log(`✓ ${source.name}: ${articles.length} AI articles found`)
+		console.log(`✓ ${source.name}: ${articles.length} articles found`)
 		return { articles, stats }
 	} catch (error) {
 		console.error(`✗ Failed to crawl ${source.name}:`, error.message)
