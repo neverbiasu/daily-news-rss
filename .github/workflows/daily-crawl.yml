@@ -4,8 +4,8 @@ on:
     # schedule:
     #   - cron: '0 0,4,8,12,16,20 * * *'  # Runs 6 times daily every 4 hours (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
     workflow_dispatch: # Manual trigger for testing
-    push:
-        branches: [main] # Also run on pushes to main for testing
+    # push:
+    #     branches: [main] # Also run on pushes to main for testing
 
 jobs:
     crawl-and-build:
