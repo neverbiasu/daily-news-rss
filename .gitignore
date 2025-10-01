@@ -4,25 +4,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# AI Models Cache
-.cache/
-*.cache
-models/
-
-site/
-
-# Data files (generated) - track latest and recent (15 days rolling)
-!data/.gitkeep
-# Note: date-specific files (2025-06-30-processed.json) are now tracked
-# and cleaned up automatically by GitHub Actions after 15 days
-
-# # Rejected articles cache (processing optimization)
-# data/rejected-articles.json
-
-# Site files (generated) - track essential files for GitHub Pages
-site/sitemap.xml
-site/robots.txt
-# site/index.html and site/data.json are now tracked for deployment
+# test files
+tests/ironpdf-test.js
 
 # Environment files
 .env

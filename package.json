@@ -11,13 +11,23 @@
     "dev": ".venv/bin/python -m http.server 8000 --directory site --bind 0.0.0.0",
     "test": "node scripts/crawl.js && node scripts/process-clean.js && node scripts/build-site.js"
   },
-  "keywords": ["ai", "news", "aggregator", "rss", "static-site"],
+  "keywords": [
+    "ai",
+    "news",
+    "aggregator",
+    "rss",
+    "static-site"
+  ],
   "author": "AI News Daily",
   "license": "MIT",
   "dependencies": {
-    "rss-parser": "^3.13.0",
+    "@ironsoftware/ironpdf": "^2025.9.1",
+    "@ironsoftware/ironpdf-engine-windows-x64": "^2025.9.1",
+    "@ironsoftware/ironpdf-engine-windows-x86": "^2025.9.1",
     "axios": "^1.6.0",
-    "node-html-parser": "^6.1.0"
+    "node-html-parser": "^6.1.0",
+    "playwright": "^1.55.1",
+    "rss-parser": "^3.13.0"
   },
   "repository": {
     "type": "git",
@@ -26,4 +36,4 @@
   "engines": {
     "node": ">=18.0.0"
   }
-} 
+}
