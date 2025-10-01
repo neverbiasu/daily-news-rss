@@ -14,8 +14,6 @@ jobs:
 
         permissions:
             contents: write # Allow pushing changes
-            pages: write # Allow GitHub Pages deployment
-            id-token: write # Required for pages deployment
 
         steps:
             - name: Checkout repository
