@@ -1,11 +1,12 @@
 import { readFileSync } from 'fs'
+import { promises as fs } from 'fs'
 import { dirname, join } from 'path'
 import { chromium } from 'playwright'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const outputDir = __dirname + '/../pdfs/'
+const outputDir = join(__dirname, '../pdfs')
 
 /**
  * read article data from latest-raw.json file
@@ -76,6 +77,8 @@ async function urlsToPdf() {
 	if (!Array.isArray(articles) || articles.length === 0) {
 		throw new Error('Articles must be a non-empty array')
 	}
+
+	await fs.mkdir(outputDir, { recursive: true })
 
 	// 记录开始时间
 	const startTime = new Date()
@@ -173,7 +176,7 @@ async function urlsToPdf() {
 				const urlObj = new URL(url)
 				const filename = urlObj.pathname.split('/').pop() || 'page'
 				const cleanFilename = filename.replace(/[^a-zA-Z0-9\-_]/g, '_')
-				const pdfPath = `${outputDir}${cleanFilename}.pdf`
+				const pdfPath = join(outputDir, `${cleanFilename}.pdf`)
 
 				// Generate PDF
 				console.log('[6/6] Generating PDF …')
