@@ -8,114 +8,123 @@ on:
     #     branches: [main] # Also run on pushes to main for testing
 
 jobs:
-    crawl-and-build:
-        runs-on: ubuntu-latest
-        timeout-minutes: 45 # Allow time(minutes) for model downloads
+  crawl-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45 # Allow time(minutes) for model downloads
 
-        permissions:
-            contents: write # Allow pushing changes
+    permissions:
+      contents: write # Allow pushing changes
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
-              with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: '18'
-                  cache: 'npm'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
 
-            - name: Install dependencies
-              run: |
-                  npm ci
-                  echo "Dependencies installed"
+      - name: Install dependencies
+        run: |
+          npm ci
+          echo "Dependencies installed"
 
-            - name: Create directories
-              run: |
-                  mkdir -p data
-                  mkdir -p site
-                  mkdir -p .cache
+      - name: Install Playwright browsers
+        run: |
+          npx playwright install --with-deps chromium
 
-            - name: Crawl RSS feeds
-              run: |
-                  echo "🤖 Starting RSS crawl..."
-                  node scripts/crawl.js
-                  echo "Crawl completed"
+      - name: Create directories
+        run: |
+          mkdir -p data
+          mkdir -p site
+          mkdir -p .cache
+          mkdir -p pdfs
 
-            - name: Optimize and validate
-              run: |
-                  # Validate JSON files
-                  echo "🔍 Validating data files..."
-                  node -e "
-                    const fs = require('fs');
-                    try {
-                      JSON.parse(fs.readFileSync('data/latest-raw.json'));
-                      console.log('✅ Data files valid');
-                    } catch(e) {
-                      console.error('❌ Invalid JSON:', e.message);
-                      process.exit(1);
-                    }
-                  "
+      - name: Crawl RSS feeds
+        run: |
+          echo "🤖 Starting RSS crawl..."
+          node scripts/crawl.js
+          echo "Crawl completed"
 
-                  # Check if we have articles
-                  ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
-                  echo "📊 Found $ARTICLE_COUNT articles"
+      - name: Generate article PDFs
+        run: npm run url-to-pdf
 
-                  if [ "$ARTICLE_COUNT" -lt 10 ]; then
-                    echo "⚠️ Warning: Low article count ($ARTICLE_COUNT)"
-                  fi
+      - name: Optimize and validate
+        run: |
+          # Validate JSON files
+          echo "🔍 Validating data files..."
+          node -e "
+            const fs = require('fs');
+            try {
+              JSON.parse(fs.readFileSync('data/latest-raw.json'));
+              console.log('✅ Data files valid');
+            } catch(e) {
+              console.error('❌ Invalid JSON:', e.message);
+              process.exit(1);
+            }
+          "
 
-            - name: Commit and push changes
-              run: |
-                  git config --local user.email "zhangluo-bot@users.noreply.github.com"
-                  git config --local user.name "zhangluo Bot"
+          # Check if we have articles
+          ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
+          echo "📊 Found $ARTICLE_COUNT articles"
 
-                  # Stash any uncommitted changes (including untracked files) before pulling
-                  git stash push -u -m "Auto-stash before pull" || echo "Nothing to stash"
+          if [ "$ARTICLE_COUNT" -lt 10 ]; then
+            echo "⚠️ Warning: Low article count ($ARTICLE_COUNT)"
+          fi
 
-                  # Pull latest changes first to avoid conflicts
-                  git pull origin main --rebase || {
-                    echo "Failed to pull latest changes, trying merge..."
-                    git pull origin main --no-rebase || {
-                      echo "Pull failed, continuing with current state..."
-                    }
-                  }
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "zhangluo-bot@users.noreply.github.com"
+          git config --local user.name "zhangluo Bot"
 
-                  # Pop stashed changes back
-                  git stash pop || echo "No stash to pop"
+          # Stash any uncommitted changes (including untracked files) before pulling
+          git stash push -u -m "Auto-stash before pull" || echo "Nothing to stash"
 
-                  # Add all changes including deletions
-                  git add data/
-                  git add -u  # Stage deletions
+          # Pull latest changes first to avoid conflicts
+          git pull origin main --rebase || {
+            echo "Failed to pull latest changes, trying merge..."
+            git pull origin main --no-rebase || {
+              echo "Pull failed, continuing with current state..."
+            }
+          }
 
-                  # Create commit message with stats
-                  ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
-                  TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+          # Pop stashed changes back
+          git stash pop || echo "No stash to pop"
 
-                  # Check what's being committed
-                  git status --short
+          # Add all changes including deletions
+          git add data/
+          git add pdfs/
+          git add -u  # Stage deletions
 
-                  git commit -m "🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP" || {
-                    echo "No changes to commit"
-                    exit 0
-                  }
+          # Create commit message with stats
+          ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
 
-                  # Push changes with retry logic
-                  git push || {
-                    echo "Push failed, trying with --force-with-lease..."
-                    git push --force-with-lease
-                  }
+          # Check what's being committed
+          git status --short
 
-            - name: Report status
-              run: |
-                  echo "✅ Workflow completed successfully!"
-                  echo "📊 Statistics:"
-                  node -e "
-                    const data = JSON.parse(require('fs').readFileSync('data/latest-raw.json'));
-                    console.log(\`Articles: \${data.articles.length}\`);
-                  "
+          git commit -m "🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP" || {
+            echo "No changes to commit"
+            exit 0
+          }
+
+          # Push changes with retry logic
+          git push || {
+            echo "Push failed, trying with --force-with-lease..."
+            git push --force-with-lease
+          }
+
+      - name: Report status
+        run: |
+          echo "✅ Workflow completed successfully!"
+          echo "📊 Statistics:"
+          node -e "
+            const data = JSON.parse(require('fs').readFileSync('data/latest-raw.json'));
+            console.log(`Articles: ${data.articles.length}`);
+          "
 
 # Environment variables for the workflow
 env:
