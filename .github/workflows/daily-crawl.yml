@@ -33,6 +33,10 @@ jobs:
           npm ci
           echo "Dependencies installed"
 
+      - name: Install Playwright browsers
+        run: |
+          npx playwright install --with-deps chromium
+
       - name: Create directories
         run: |
           mkdir -p data
