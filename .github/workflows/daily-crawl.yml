@@ -8,123 +8,172 @@ on:
     #     branches: [main] # Also run on pushes to main for testing
 
 jobs:
-  crawl-and-build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45 # Allow time(minutes) for model downloads
+    crawl-and-build:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45 # Allow time(minutes) for model downloads
 
-    permissions:
-      contents: write # Allow pushing changes
+        permissions:
+            contents: write # Allow pushing changes
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  fetch-depth: 0 # Fetch full history to avoid detached HEAD
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '18'
+                  cache: 'npm'
 
-      - name: Install dependencies
-        run: |
-          npm ci
-          echo "Dependencies installed"
+            - name: Install dependencies
+              run: |
+                  npm ci
+                  echo "Dependencies installed"
 
-      - name: Install Playwright browsers
-        run: |
-          npx playwright install --with-deps chromium
+            - name: Install Playwright browsers
+              run: |
+                  npx playwright install --with-deps chromium
 
-      - name: Create directories
-        run: |
-          mkdir -p data
-          mkdir -p site
-          mkdir -p .cache
-          mkdir -p pdfs
+            - name: Create directories
+              run: |
+                  mkdir -p data
+                  mkdir -p site
+                  mkdir -p .cache
+                  mkdir -p pdfs
 
-      - name: Crawl RSS feeds
-        run: |
-          echo "🤖 Starting RSS crawl..."
-          node scripts/crawl.js
-          echo "Crawl completed"
+            - name: Crawl RSS feeds
+              run: |
+                  echo "🤖 Starting RSS crawl..."
+                  node scripts/crawl.js
+                  echo "Crawl completed"
 
-      - name: Generate article PDFs
-        run: npm run url-to-pdf
+            - name: Optimize and validate
+              run: |
+                  # Validate JSON files
+                  echo "🔍 Validating data files..."
+                  node -e "
+                    const fs = require('fs');
+                    try {
+                      JSON.parse(fs.readFileSync('data/latest-raw.json'));
+                      console.log('✅ Data files valid');
+                    } catch(e) {
+                      console.error('❌ Invalid JSON:', e.message);
+                      process.exit(1);
+                    }
+                  "
 
-      - name: Optimize and validate
-        run: |
-          # Validate JSON files
-          echo "🔍 Validating data files..."
-          node -e "
-            const fs = require('fs');
-            try {
-              JSON.parse(fs.readFileSync('data/latest-raw.json'));
-              console.log('✅ Data files valid');
-            } catch(e) {
-              console.error('❌ Invalid JSON:', e.message);
-              process.exit(1);
-            }
-          "
+                  # Check if we have articles
+                  ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
+                  echo "📊 Found $ARTICLE_COUNT articles"
 
-          # Check if we have articles
-          ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
-          echo "📊 Found $ARTICLE_COUNT articles"
+                  if [ "$ARTICLE_COUNT" -lt 10 ]; then
+                    echo "⚠️ Warning: Low article count ($ARTICLE_COUNT)"
+                  fi
 
-          if [ "$ARTICLE_COUNT" -lt 10 ]; then
-            echo "⚠️ Warning: Low article count ($ARTICLE_COUNT)"
-          fi
+            - name: Generate article PDFs
+              run: npm run url-to-pdf
 
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "zhangluo-bot@users.noreply.github.com"
-          git config --local user.name "zhangluo Bot"
+            - name: Configure Git
+              run: |
+                  git config --global user.email "zl-bot@users.noreply.github.com"
+                  git config --global user.name "ZL Bot"
+                  git config --global pull.rebase false
+                  git config --global merge.tool false
 
-          # Stash any uncommitted changes (including untracked files) before pulling
-          git stash push -u -m "Auto-stash before pull" || echo "Nothing to stash"
+            - name: Get current branch
+              run: |
+                  # Get the current branch name
+                  BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+                  echo "Current branch: $BRANCH_NAME"
+                  echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
-          # Pull latest changes first to avoid conflicts
-          git pull origin main --rebase || {
-            echo "Failed to pull latest changes, trying merge..."
-            git pull origin main --no-rebase || {
-              echo "Pull failed, continuing with current state..."
-            }
-          }
+                  # If in detached HEAD, try to checkout main branch
+                  if [ "$BRANCH_NAME" = "HEAD" ]; then
+                    echo "❌ Detached HEAD detected"
+                    exit 1
+                  fi
 
-          # Pop stashed changes back
-          git stash pop || echo "No stash to pop"
+            - name: Configure Git
+              run: |
+                  git config --global user.email "zl-bot@users.noreply.github.com"
+                  git config --global user.name "ZL Bot"
+                  git config --global pull.rebase false
+                  git config --global merge.tool false
 
-          # Add all changes including deletions
-          git add data/
-          git add pdfs/
-          git add -u  # Stage deletions
+            - name: Get current branch
+              run: |
+                  # Get the current branch name
+                  BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+                  echo "Current branch: $BRANCH_NAME"
+                  echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
-          # Create commit message with stats
-          ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
-          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+                  # If in detached HEAD, try to checkout main branch
+                  if [ "$BRANCH_NAME" = "HEAD" ]; then
+                    echo "❌ Detached HEAD detected"
+                    exit 1
+                  fi
 
-          # Check what's being committed
-          git status --short
+            - name: Commit and push changes
+              run: |
+                  # Ensure we're on the correct branch
+                  git checkout $BRANCH_NAME
 
-          git commit -m "🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP" || {
-            echo "No changes to commit"
-            exit 0
-          }
+                  # Pull latest changes with conflict resolution
+                  echo "Pulling latest changes..."
+                  git pull origin $BRANCH_NAME --no-rebase || {
+                    echo "Pull failed, checking status..."
+                    git status
+                    echo "Attempting to resolve conflicts..."
+                    
+                    # Try pull again
+                    git pull origin $BRANCH_NAME --no-rebase || {
+                      echo "Pull still failed, continuing with current state..."
+                    }
+                  }
 
-          # Push changes with retry logic
-          git push || {
-            echo "Push failed, trying with --force-with-lease..."
-            git push --force-with-lease
-          }
+                  # Add all changes
+                  git add data/
+                  git add pdfs/
+                  git add -u  # Stage deletions
 
-      - name: Report status
-        run: |
-          echo "✅ Workflow completed successfully!"
-          echo "📊 Statistics:"
-          node -e "
-            const data = JSON.parse(require('fs').readFileSync('data/latest-raw.json'));
-            console.log(`Articles: ${data.articles.length}`);
-          "
+                  # Check if there are changes to commit
+                  if git diff --staged --quiet; then
+                    echo "ℹ️ No changes to commit - this is normal if no new articles were found"
+                    exit 0  # Exit successfully, not as failure
+                  fi
+
+                  # Create commit message with stats
+                  ARTICLE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/latest-raw.json')).articles.length)")
+                  TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+                  # Check what's being committed
+                  echo "Changes to be committed:"
+                  git status --short
+
+                  git commit -m "🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP"
+
+                  # Push changes with retry logic
+                  echo "Pushing changes..."
+                  git push origin $BRANCH_NAME || {
+                    echo "Push failed, trying with force-with-lease..."
+                    git push origin $BRANCH_NAME --force-with-lease || {
+                      echo "❌ Push failed even with force-with-lease"
+                      echo "This might indicate a serious issue with the repository state"
+                      exit 1
+                    }
+                  }
+
+            - name: Report status
+              run: |
+                  echo "✅ Workflow completed successfully!"
+                  echo "📊 Statistics:"
+                  node -e "
+                    const data = JSON.parse(require('fs').readFileSync('data/latest-raw.json'));
+                    console.log(`Articles: ${data.articles.length}`);
+                  "
 
 # Environment variables for the workflow
 env:

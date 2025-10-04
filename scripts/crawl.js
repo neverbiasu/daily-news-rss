@@ -7,8 +7,8 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const parser = new Parser({
-	timeout: 10000,
-	maxRedirects: 3
+	timeout: 30000, // add timeout to 30 seconds
+	maxRedirects: 5 // add max redirects to 5
 })
 
 // Load sources
@@ -47,23 +47,36 @@ async function crawlAllSources() {
 
 	// Crawl all sources in parallel (but with some delay to be nice)
 	const allArticles = []
-	const crawlStats = { totalProcessed: 0, filtered: 0 }
-	const batchSize = 5 // Process 5 sources at a time
+	const crawlStats = { totalProcessed: 0, filtered: 0, failed: 0 }
+	const batchSize = 3 // reduce batch size to avoid too many concurrent requests
 
 	for (let i = 0; i < sources.length; i += batchSize) {
 		const batch = sources.slice(i, i + batchSize)
-		const promises = batch.map(source => crawlFeed(source, crawlStats))
-		const results = await Promise.all(promises)
+		console.log(`\n📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(sources.length / batchSize)}`)
 
-		for (const result of results) {
-			if (result.articles) {
-				allArticles.push(...result.articles)
+		const promises = batch.map(source => crawlFeed(source, crawlStats))
+		const results = await Promise.allSettled(promises) // use Promise.allSettled to avoid single failure affecting overall
+
+		for (let j = 0; j < results.length; j++) {
+			const result = results[j]
+			const source = batch[j]
+
+			if (result.status === 'fulfilled' && result.value.articles) {
+				allArticles.push(...result.value.articles)
+				console.log(`✅ ${source.name}: ${result.value.articles.length} articles`)
+			} else {
+				crawlStats.failed++
+				console.error(`❌ ${source.name}: Failed to crawl`)
+				if (result.status === 'rejected') {
+					console.error(`   Error: ${result.reason.message}`)
+				}
 			}
 		}
 
-		// Small delay between batches
+		// add delay between batches
 		if (i + batchSize < sources.length) {
-			await new Promise(resolve => setTimeout(resolve, 1000))
+			console.log('⏳ Waiting 2 seconds before next batch...')
+			await new Promise(resolve => setTimeout(resolve, 2000))
 		}
 	}
 
@@ -73,8 +86,8 @@ async function crawlAllSources() {
 	// Sort by publication date (newest first)
 	uniqueArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
 
-	console.log(`📰 Found ${uniqueArticles.length} unique articles`)
-	console.log(`📊 Crawl stats: ${crawlStats.totalProcessed} processed → ${uniqueArticles.length} kept (${crawlStats.filtered} filtered)`)
+	console.log(`\n📰 Found ${uniqueArticles.length} unique articles`)
+	console.log(`📊 Crawl stats: ${crawlStats.totalProcessed} processed → ${uniqueArticles.length} kept (${crawlStats.filtered} filtered, ${crawlStats.failed} failed)`)
 
 	// Ensure data directory exists
 	const dataDir = path.join(__dirname, '../data')
@@ -98,83 +111,99 @@ async function crawlAllSources() {
 
 // Crawl a single RSS feed with keyword-based filtering
 async function crawlFeed(source, stats = null) {
-	try {
-		console.log(`Crawling: ${source.name}`)
+	let retryCount = 0
+	const maxRetries = 2
 
-		const articles = []
+	while (retryCount <= maxRetries) {
+		try {
+			console.log(`🔍 Crawling: ${source.name} - ${source.url} (attempt ${retryCount + 1}/${maxRetries + 1})`)
 
-		// parse the feed url
-		const feed = await parser.parseURL(source.url)
-		console.log(`feed articles length: ${feed.items.length}`)
+			const articles = []
 
-		// articles length limit
-		const itemLimit = 10
-		const items = feed.items.slice(0, itemLimit)
-		console.log(`itemLimit: ${itemLimit} items length: ${items.length}`)
+			// parse the feed url with retry mechanism
+			const feed = await parser.parseURL(source.url)
+			console.log(`📄 Feed articles length: ${feed.items.length}`)
 
-		for (const item of items) {
-			const title = cleanTitle(item.title || '')
-			const url = item.link || item.guid
+			// articles length limit
+			// const itemLimit = 10
+			// const items = feed.items.slice(0, itemLimit)
+			// console.log(`itemLimit: ${itemLimit} items length: ${items.length}`)
 
-			if (!title || !url) continue
+			for (const item of feed.items) {
+				const title = cleanTitle(item.title || '')
+				const url = item.link || item.guid
 
-			if (stats) stats.totalProcessed++
+				if (!title || !url) continue
 
-			// Extract description for filtering
-			let description = ''
-			if (item.contentSnippet) {
-				description = item.contentSnippet.substring(0, 200)
-			} else if (item.content) {
-				description = item.content.replace(/<[^>]*>/g, '').substring(0, 200)
-			} else if (item.summary) {
-				description = item.summary.replace(/<[^>]*>/g, '').substring(0, 200)
+				if (stats) stats.totalProcessed++
+
+				// extract description for filtering
+				let description = ''
+				if (item.contentSnippet) {
+					description = item.contentSnippet.substring(0, 200)
+				} else if (item.content) {
+					description = item.content.replace(/<[^>]*>/g, '').substring(0, 200)
+				} else if (item.summary) {
+					description = item.summary.replace(/<[^>]*>/g, '').substring(0, 200)
+				}
+
+				// 15 days to align with cleanup
+				const daysBack = 15
+				const pubDate = new Date(item.pubDate || item.isoDate || item.published || Date.now())
+
+				// Validate date - skip articles with invalid or future dates
+				if (isNaN(pubDate.getTime())) {
+					console.log(`⚠️ Invalid date for article: "${title.substring(0, 50)}..."`)
+					continue
+				}
+
+				const now = new Date()
+				if (pubDate > now) {
+					console.log(`⚠️ Future date detected for article: "${title.substring(0, 50)}..." (${pubDate.toISOString()})`)
+					// Use current time instead of future date
+					pubDate.setTime(now.getTime())
+				}
+
+				const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000)
+				if (pubDate < cutoffDate) {
+					if (stats) stats.filtered++
+					continue
+				}
+
+				articles.push({
+					id: generateId(title, url),
+
+					// article
+					title: title,
+					url: url,
+					author: item.author || '',
+					// content: item.content || '',
+					pubDate: pubDate.toISOString(),
+					metaDescription: description,
+					crawledAt: new Date().toISOString(),
+
+					// source
+					source: source.name,
+					source_domain: extractDomain(url),
+					source_category: source.category,
+					source_priority: source.priority
+				})
 			}
 
-			// 15 days to align with cleanup
-			const daysBack = 15
-			const pubDate = new Date(item.pubDate || item.isoDate || item.published || Date.now())
-
-			// Validate date - skip articles with invalid or future dates
-			if (isNaN(pubDate.getTime())) {
-				console.log(`⚠️ Invalid date for article: "${title.substring(0, 50)}..."`)
-				continue
+			console.log(`✅ ${source.name}: ${articles.length} articles found`)
+			return { articles, stats }
+		} catch (error) {
+			retryCount++
+			if (retryCount <= maxRetries) {
+				console.log(`⚠️ Failed to crawl ${source.name}, retrying... (${retryCount}/${maxRetries})`)
+				console.log(`   Error: ${error.message}`)
+				// wait for a while before retrying
+				await new Promise(resolve => setTimeout(resolve, 2000 * retryCount))
+			} else {
+				console.error(`❌ Failed to crawl ${source.name} after ${maxRetries + 1} attempts:`, error.message)
+				return { articles: [], stats }
 			}
-
-			const now = new Date()
-			if (pubDate > now) {
-				console.log(`⚠️ Future date detected for article: "${title.substring(0, 50)}..." (${pubDate.toISOString()})`)
-				// Use current time instead of future date
-				pubDate.setTime(now.getTime())
-			}
-
-			const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000)
-			if (pubDate < cutoffDate) continue
-
-			articles.push({
-				id: generateId(title, url),
-
-				// article
-				title: title,
-				url: url,
-				author: item.author || '',
-				// content: item.content || '',
-				pubDate: pubDate.toISOString(),
-				metaDescription: description,
-				crawledAt: new Date().toISOString(),
-
-				// source
-				source: source.name,
-				source_domain: extractDomain(url),
-				source_category: source.category,
-				source_priority: source.priority
-			})
 		}
-
-		console.log(`✓ ${source.name}: ${articles.length} articles found`)
-		return { articles, stats }
-	} catch (error) {
-		console.error(`✗ Failed to crawl ${source.name}:`, error.message)
-		return { articles: [], stats }
 	}
 }
 
