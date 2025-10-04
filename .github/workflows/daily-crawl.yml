@@ -73,7 +73,23 @@ jobs:
           fi
 
       - name: Generate article PDFs
-        run: npm run url-to-pdf
+        run: |
+          echo "📄 Starting PDF generation..."
+          # Count PDFs before generation
+          PDF_COUNT_BEFORE=$(find pdfs/ -name "*.pdf" -type f 2>/dev/null | wc -l || echo "0")
+          echo "📊 PDFs before generation: $PDF_COUNT_BEFORE"
+
+          # Generate PDFs
+          npm run url-to-pdf
+
+          # Count PDFs after generation
+          PDF_COUNT_AFTER=$(find pdfs/ -name "*.pdf" -type f 2>/dev/null | wc -l || echo "0")
+          NEW_PDFS=$((PDF_COUNT_AFTER - PDF_COUNT_BEFORE))
+          echo "📊 PDFs after generation: $PDF_COUNT_AFTER"
+          echo "📊 New PDFs generated: $NEW_PDFS"
+
+          # Save the count for later use
+          echo "NEW_PDFS=$NEW_PDFS" >> $GITHUB_ENV
 
       - name: Configure Git
         run: |
@@ -131,7 +147,7 @@ jobs:
           echo "Changes to be committed:"
           git status --short
 
-          git commit -m "🤖 Update news - $ARTICLE_COUNT articles - $TIMESTAMP"
+          git commit -m "📰 Crawl sources & generate PDFs - $ARTICLE_COUNT articles, $NEW_PDFS new PDFs - $TIMESTAMP"
 
           # Push changes with retry logic
           echo "Pushing changes..."
@@ -146,12 +162,47 @@ jobs:
 
       - name: Report status
         run: |
-          echo "✅ Workflow completed successfully!"
-          echo "📊 Statistics:"
+          echo "✅ Source crawling & PDF generation completed successfully!"
+          echo "📊 Final Statistics:"
+
+          # Count articles by source group
           node -e "
-            const data = JSON.parse(require('fs').readFileSync('data/latest-raw.json'));
-            console.log(`Articles: ${data.articles.length}`);
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Count articles in combined file
+            const combinedData = JSON.parse(fs.readFileSync('data/latest-raw.json'));
+            console.log(\`📰 Total articles crawled: \${combinedData.articles.length}\`);
+            
+            // Count articles by source group
+            const dataDir = 'data';
+            const groups = fs.readdirSync(dataDir).filter(item => {
+              return fs.statSync(path.join(dataDir, item)).isDirectory();
+            });
+            
+            console.log('📁 Articles by source group:');
+            groups.forEach(group => {
+              const groupFiles = fs.readdirSync(path.join(dataDir, group))
+                .filter(file => file.endsWith('-latest-raw.json'));
+              if (groupFiles.length > 0) {
+                const latestFile = groupFiles.sort().pop();
+                const groupData = JSON.parse(fs.readFileSync(path.join(dataDir, group, latestFile)));
+                console.log(\`   \${group}: \${groupData.articles.length} articles\`);
+              }
+            });
           "
+
+          # Report new PDFs generated in this run
+          echo "📄 New PDFs generated in this run: $NEW_PDFS"
+
+          # Show total PDFs by source (for reference)
+          echo "📊 Total PDFs by source (including previous runs):"
+          find pdfs/ -name "*.pdf" -type f 2>/dev/null | while read pdf; do
+            source_dir=$(dirname "$pdf" | sed 's|pdfs/||' | cut -d'/' -f1)
+            echo "   $source_dir: $(basename "$pdf")"
+          done | sort | uniq -c | while read count source; do
+            echo "   $source: $count PDFs"
+          done
 
 # Environment variables for the workflow
 env:
