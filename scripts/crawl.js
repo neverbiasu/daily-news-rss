@@ -198,7 +198,7 @@ async function crawlFeed(source, stats = null) {
 			const items = feed.items.slice(0, itemLimit)
 			console.log(`itemLimit: ${itemLimit} items length: ${items.length}`)
 
-			for (const item of feed.items) {
+			for (const item of items) {
 				const title = cleanTitle(item.title || '')
 				const url = item.link || item.guid
 
