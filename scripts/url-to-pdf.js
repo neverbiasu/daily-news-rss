@@ -99,6 +99,27 @@ async function urlsToPdf() {
 
 	try {
 		console.log('[1/6] Launching Chromium …')
+
+		// Check if Playwright browsers are installed, install if needed
+		try {
+			const testBrowser = await chromium.launch({ headless: true })
+			await testBrowser.close()
+			console.log('✅ Playwright browsers are ready')
+		} catch (error) {
+			if (error.message.includes("Executable doesn't exist")) {
+				console.log('📦 Playwright browsers not found, installing...')
+				console.log('⏳ This may take a few minutes...')
+				const { execSync } = require('child_process')
+				execSync('npx playwright install --with-deps chromium', {
+					stdio: 'inherit',
+					timeout: 300000 // 5 minutes timeout
+				})
+				console.log('✅ Playwright browsers installed successfully')
+			} else {
+				throw error
+			}
+		}
+
 		const browser = await chromium.launch() // headless: false can be adjusted
 
 		// count success and failure
