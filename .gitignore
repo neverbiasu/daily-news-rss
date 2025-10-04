@@ -52,4 +52,7 @@ __pycache__/
 
 # Local development
 serve/
-local-test/ 
+local-test/
+
+# PDF files (ignored locally but included in CI/CD)
+pdfs/ 

@@ -40,7 +40,6 @@ jobs:
             - name: Create directories
               run: |
                   mkdir -p data
-                  mkdir -p site
                   mkdir -p .cache
                   mkdir -p pdfs
 
@@ -90,27 +89,6 @@ jobs:
                   echo "Current branch: $BRANCH_NAME"
                   echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
-                  # If in detached HEAD, try to checkout main branch
-                  if [ "$BRANCH_NAME" = "HEAD" ]; then
-                    echo "❌ Detached HEAD detected"
-                    exit 1
-                  fi
-
-            - name: Configure Git
-              run: |
-                  git config --global user.email "zl-bot@users.noreply.github.com"
-                  git config --global user.name "ZL Bot"
-                  git config --global pull.rebase false
-                  git config --global merge.tool false
-
-            - name: Get current branch
-              run: |
-                  # Get the current branch name
-                  BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
-                  echo "Current branch: $BRANCH_NAME"
-                  echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
-
-                  # If in detached HEAD, try to checkout main branch
                   if [ "$BRANCH_NAME" = "HEAD" ]; then
                     echo "❌ Detached HEAD detected"
                     exit 1
@@ -136,7 +114,7 @@ jobs:
 
                   # Add all changes
                   git add data/
-                  git add pdfs/
+                  git add -f pdfs/  # Force add pdfs folder (ignored locally but needed in CI)
                   git add -u  # Stage deletions
 
                   # Check if there are changes to commit
