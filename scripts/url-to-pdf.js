@@ -125,15 +125,20 @@ async function urlsToPdf() {
 		// count success and failure
 		let successCount = 0
 		let failureCount = 0
+		let skippedCount = 0
 		const failedUrls = []
 
 		// Process each source group
 		for (const [sourceDomain, sourceArticles] of Object.entries(articlesBySource)) {
 			console.log(`\n🔄 Processing source: ${sourceDomain} (${sourceArticles.length} articles)`)
 
-			// Create source-specific PDF directory
-			const sourcePdfDir = join(outputDir, sourceDomain)
+			// Create date-based directory structure: pdfs/[source]/YYYY-MM-DD/
+			const now = new Date()
+			const dateStr = now.toISOString().slice(0, 10) // 2025-01-03 format
+			const sourcePdfDir = join(outputDir, sourceDomain, dateStr)
 			await fs.mkdir(sourcePdfDir, { recursive: true })
+
+			console.log(`📁 PDF directory: ${sourceDomain}/${dateStr}/`)
 
 			for (let i = 0; i < sourceArticles.length; i++) {
 				const article = sourceArticles[i]
@@ -218,6 +223,18 @@ async function urlsToPdf() {
 					const cleanFilename = filename.replace(/[^a-zA-Z0-9\-_]/g, '_')
 					const pdfPath = join(sourcePdfDir, `${cleanFilename}.pdf`)
 
+					// Check if PDF already exists
+					try {
+						await fs.access(pdfPath)
+						console.log(`⏭️ PDF already exists, skipping: ${sourceDomain}/${dateStr}/${cleanFilename}.pdf`)
+						await page.close()
+						skippedCount++
+						console.log(`✅ Skipped existing PDF ${i + 1}/${sourceArticles.length} from ${sourceDomain}`)
+						continue
+					} catch (error) {
+						// File doesn't exist, continue with PDF generation
+					}
+
 					// Generate PDF
 					console.log('[6/6] Generating PDF …')
 					const pdfBuffer = await page.pdf({
@@ -227,7 +244,7 @@ async function urlsToPdf() {
 						margin: { top: '1cm', bottom: '1cm', left: '1cm', right: '1cm' }
 					})
 
-					console.log(`✅ PDF saved: ${sourceDomain}/${cleanFilename}.pdf (${(pdfBuffer.length / 1024).toFixed(1)} KB)`)
+					console.log(`✅ PDF saved: ${sourceDomain}/${dateStr}/${cleanFilename}.pdf (${(pdfBuffer.length / 1024).toFixed(1)} KB)`)
 					await page.close()
 
 					successCount++
@@ -257,8 +274,9 @@ async function urlsToPdf() {
 		// output final summary
 		console.log(`\n📊 Processing Summary:`)
 		console.log(`✅ Successfully processed: ${successCount} URLs`)
+		console.log(`⏭️ Skipped existing files: ${skippedCount} URLs`)
 		console.log(`❌ Failed to process: ${failureCount} URLs`)
-		console.log(`📈 Success rate: ${((successCount / articles.length) * 100).toFixed(1)}%`)
+		console.log(`📈 Success rate: ${(((successCount + skippedCount) / articles.length) * 100).toFixed(1)}%`)
 		console.log(`📄 Total URLs processed: ${articles.length}`)
 		console.log(`📁 PDFs organized by ${Object.keys(articlesBySource).length} sources`)
 		console.log(`\n⏰ Time Information:`)
@@ -277,7 +295,7 @@ async function urlsToPdf() {
 		}
 
 		console.log(`\n🎉 Processing completed!`)
-		return { successCount, failureCount, failedUrls, totalUrls: articles.length, startTime, endTime, duration: totalDuration }
+		return { successCount, skippedCount, failureCount, failedUrls, totalUrls: articles.length, startTime, endTime, duration: totalDuration }
 	} catch (error) {
 		console.error('❌ url-to-pdf processing error:', error)
 		process.exit(1)
@@ -294,8 +312,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			console.log(`📊 Final Results:`)
 			console.log(`   📄 Total URLs: ${result.totalUrls}`)
 			console.log(`   ✅ Success: ${result.successCount}`)
+			console.log(`   ⏭️ Skipped: ${result.skippedCount}`)
 			console.log(`   ❌ Failed: ${result.failureCount}`)
-			console.log(`   📈 Success Rate: ${((result.successCount / result.totalUrls) * 100).toFixed(1)}%`)
+			console.log(`   📈 Success Rate: ${(((result.successCount + result.skippedCount) / result.totalUrls) * 100).toFixed(1)}%`)
 			console.log(`   ⏱️  Total Duration: ${result.duration}`)
 		})
 		.catch(error => {
