@@ -15,9 +15,21 @@ const parser = new Parser({
 async function loadSources() {
 	const sourcesPath = path.join(__dirname, '../sources.json')
 	const sourcesData = await fs.readFile(sourcesPath, 'utf-8')
-	const { theconversation_sources } = JSON.parse(sourcesData)
+	const sourcesJson = JSON.parse(sourcesData)
 
-	return [...(theconversation_sources || [])]
+	// Extract all sources from the JSON structure
+	const allSources = []
+	for (const [sourceName, sourceArray] of Object.entries(sourcesJson)) {
+		if (Array.isArray(sourceArray)) {
+			// Add source identifier to each source
+			sourceArray.forEach(source => {
+				source.sourceIdentifier = sourceName
+			})
+			allSources.push(...sourceArray)
+		}
+	}
+
+	return allSources
 }
 
 // Extract domain from URL
@@ -45,68 +57,125 @@ async function crawlAllSources() {
 	const sources = await loadSources()
 	console.log(`Found ${sources.length} sources to crawl`)
 
-	// Crawl all sources in parallel (but with some delay to be nice)
-	const allArticles = []
-	const crawlStats = { totalProcessed: 0, filtered: 0, failed: 0 }
-	const batchSize = 3 // reduce batch size to avoid too many concurrent requests
+	// Group sources by sourceIdentifier
+	const sourcesByGroup = {}
+	sources.forEach(source => {
+		const groupName = source.sourceIdentifier
+		if (!sourcesByGroup[groupName]) {
+			sourcesByGroup[groupName] = []
+		}
+		sourcesByGroup[groupName].push(source)
+	})
 
-	for (let i = 0; i < sources.length; i += batchSize) {
-		const batch = sources.slice(i, i + batchSize)
-		console.log(`\n📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(sources.length / batchSize)}`)
+	console.log(`📊 Source groups: ${Object.keys(sourcesByGroup).join(', ')}`)
 
-		const promises = batch.map(source => crawlFeed(source, crawlStats))
-		const results = await Promise.allSettled(promises) // use Promise.allSettled to avoid single failure affecting overall
+	// Process each source group separately
+	const allGroupResults = {}
 
-		for (let j = 0; j < results.length; j++) {
-			const result = results[j]
-			const source = batch[j]
+	for (const [groupName, groupSources] of Object.entries(sourcesByGroup)) {
+		console.log(`\n🔄 Processing source group: ${groupName}`)
 
-			if (result.status === 'fulfilled' && result.value.articles) {
-				allArticles.push(...result.value.articles)
-				console.log(`✅ ${source.name}: ${result.value.articles.length} articles`)
-			} else {
-				crawlStats.failed++
-				console.error(`❌ ${source.name}: Failed to crawl`)
-				if (result.status === 'rejected') {
-					console.error(`   Error: ${result.reason.message}`)
+		// Crawl all sources in this group
+		const allArticles = []
+		const crawlStats = { totalProcessed: 0, filtered: 0, failed: 0 }
+		const batchSize = 3
+
+		for (let i = 0; i < groupSources.length; i += batchSize) {
+			const batch = groupSources.slice(i, i + batchSize)
+			console.log(`\n📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(groupSources.length / batchSize)}`)
+
+			const promises = batch.map(source => crawlFeed(source, crawlStats))
+			const results = await Promise.allSettled(promises)
+
+			for (let j = 0; j < results.length; j++) {
+				const result = results[j]
+				const source = batch[j]
+
+				if (result.status === 'fulfilled' && result.value.articles) {
+					allArticles.push(...result.value.articles)
+					console.log(`✅ ${source.name}: ${result.value.articles.length} articles`)
+				} else {
+					crawlStats.failed++
+					console.error(`❌ ${source.name}: Failed to crawl`)
+					if (result.status === 'rejected') {
+						console.error(`   Error: ${result.reason.message}`)
+					}
 				}
+			}
+
+			// add delay between batches
+			if (i + batchSize < groupSources.length) {
+				console.log('⏳ Waiting 2 seconds before next batch...')
+				await new Promise(resolve => setTimeout(resolve, 2000))
 			}
 		}
 
-		// add delay between batches
-		if (i + batchSize < sources.length) {
-			console.log('⏳ Waiting 2 seconds before next batch...')
-			await new Promise(resolve => setTimeout(resolve, 2000))
+		// Remove duplicates for this group
+		const uniqueArticles = removeDuplicates(allArticles)
+
+		// Sort by publication date (newest first)
+		uniqueArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+
+		console.log(`\n📰 Group ${groupName}: Found ${uniqueArticles.length} unique articles`)
+		console.log(`📊 Group stats: ${crawlStats.totalProcessed} processed → ${uniqueArticles.length} kept (${crawlStats.filtered} filtered, ${crawlStats.failed} failed)`)
+
+		// Save data for this group
+		const groupOutput = {
+			crawledAt: new Date().toISOString(),
+			sourceGroup: groupName,
+			totalSources: groupSources.length,
+			totalArticles: uniqueArticles.length,
+			articles: uniqueArticles
+		}
+
+		// Create timestamp for filename (YYYY-MM-DD-HH format)
+		const now = new Date()
+		const timestamp = now.toISOString().slice(0, 13).replace('T', '-')
+
+		// Ensure data directory exists for this group
+		const groupDataDir = path.join(__dirname, '../data', groupName)
+		await fs.mkdir(groupDataDir, { recursive: true })
+
+		// Save with timestamp
+		const filename = `${timestamp}-latest-raw.json`
+		const filepath = path.join(groupDataDir, filename)
+		await fs.writeFile(filepath, JSON.stringify(groupOutput, null, 2))
+		console.log(`💾 Saved group data to: ${groupName}/${filename}`)
+
+		allGroupResults[groupName] = {
+			articles: uniqueArticles,
+			stats: crawlStats,
+			filepath: filepath
 		}
 	}
 
-	// Remove duplicates
-	const uniqueArticles = removeDuplicates(allArticles)
+	// Create a combined summary
+	const totalArticles = Object.values(allGroupResults).reduce((sum, result) => sum + result.articles.length, 0)
+	console.log(`\n🎉 All groups processed! Total articles: ${totalArticles}`)
 
-	// Sort by publication date (newest first)
-	uniqueArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+	// Create combined data for all articles
+	const allCombinedArticles = []
+	Object.values(allGroupResults).forEach(result => {
+		allCombinedArticles.push(...result.articles)
+	})
 
-	console.log(`\n📰 Found ${uniqueArticles.length} unique articles`)
-	console.log(`📊 Crawl stats: ${crawlStats.totalProcessed} processed → ${uniqueArticles.length} kept (${crawlStats.filtered} filtered, ${crawlStats.failed} failed)`)
+	// Sort combined articles by publication date (newest first)
+	allCombinedArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
 
-	// Ensure data directory exists
-	const dataDir = path.join(__dirname, '../data')
-	await fs.mkdir(dataDir, { recursive: true })
-
-	// Save raw crawled data
-	const output = {
+	// Save combined data to data/latest-raw.json
+	const combinedOutput = {
 		crawledAt: new Date().toISOString(),
+		totalSourceGroups: Object.keys(allGroupResults).length,
 		totalSources: sources.length,
-		totalArticles: uniqueArticles.length,
-		articles: uniqueArticles
+		totalArticles: allCombinedArticles.length,
+		articles: allCombinedArticles
 	}
 
-	// Save only as latest-raw.json (no dated duplicates)
-	const filepath = path.join(dataDir, 'latest-raw.json')
-	await fs.writeFile(filepath, JSON.stringify(output, null, 2))
-	console.log(`💾 Saved raw data to: latest-raw.json`)
+	const combinedFilepath = path.join(__dirname, '../data/latest-raw.json')
+	await fs.writeFile(combinedFilepath, JSON.stringify(combinedOutput, null, 2))
+	console.log(`💾 Saved combined data to: latest-raw.json (${allCombinedArticles.length} articles)`)
 
-	return uniqueArticles
+	return allGroupResults
 }
 
 // Crawl a single RSS feed with keyword-based filtering
@@ -247,8 +316,14 @@ function removeDuplicates(articles) {
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
 	crawlAllSources()
-		.then(articles => {
-			console.log(`✅ Crawl complete! Found ${articles.length} articles`)
+		.then(results => {
+			const totalArticles = Object.values(results).reduce((sum, result) => sum + result.articles.length, 0)
+			console.log(`✅ Crawl complete! Found ${totalArticles} articles across ${Object.keys(results).length} source groups`)
+
+			// Print summary for each group
+			Object.entries(results).forEach(([groupName, result]) => {
+				console.log(`   📊 ${groupName}: ${result.articles.length} articles`)
+			})
 		})
 		.catch(error => {
 			console.error('❌ Crawl failed:', error)

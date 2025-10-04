@@ -4,8 +4,7 @@
 			"name": "theconversation.com/us/business",
 			"url": "https://theconversation.com/us/business/articles.atom",
 			"category": "business",
-			"language": "us",
-			"priority": "high"
+			"language": "us"
 		}
 	]
 }
