@@ -303,16 +303,22 @@ async function htmlToPdf() {
 						console.log(`[4/5] Found ${imageCount} images to load`)
 
 						if (imageCount > 0) {
-							// Wait for all images to load with a more robust approach
+							console.log('[4/5] Waiting for all images to complete loading...')
 							await page.waitForFunction(
 								() => {
 									const images = Array.from(document.querySelectorAll('img'))
 									if (images.length === 0) return true
 
-									return images.every(img => {
-										// Check if image is loaded and has dimensions
-										return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
-									})
+									const loadedCount = images.filter(img => {
+										const isLoaded = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
+										if (!isLoaded) {
+											console.log(`[4/5] Image still loading: ${img.src}`)
+										}
+										return isLoaded
+									}).length
+
+									console.log(`[4/5] Progress: ${loadedCount}/${images.length} images loaded`)
+									return loadedCount === images.length
 								},
 								{ timeout: 30000 }
 							)
