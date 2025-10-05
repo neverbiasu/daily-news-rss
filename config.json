@@ -1,0 +1,17 @@
+{
+	"pdfGeneration": {
+		"description": "PDF generation method configuration",
+		"options": {
+			"html-to-pdf": {
+				"open": true,
+				"name": "HTML to PDF",
+				"script": "scripts/html-to-pdf.js"
+			},
+			"url-to-pdf": {
+				"open": true,
+				"name": "URL to PDF",
+				"script": "scripts/url-to-pdf.js"
+			}
+		}
+	}
+}

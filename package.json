@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "crawl": "node scripts/crawl.js",
-    "url-to-pdf": "node scripts/url-to-pdf.js"
+    "url-to-pdf": "node scripts/url-to-pdf.js",
+    "html-to-pdf": "node scripts/html-to-pdf.js",
+    "check-config": "node scripts/check-config.js"
   },
   "keywords": [
     "ai",
@@ -18,11 +20,6 @@
   "author": "AI News Daily",
   "license": "MIT",
   "dependencies": {
-    "@ironsoftware/ironpdf": "^2025.9.1",
-    "@ironsoftware/ironpdf-engine-windows-x64": "^2025.9.1",
-    "@ironsoftware/ironpdf-engine-windows-x86": "^2025.9.1",
-    "axios": "^1.6.0",
-    "node-html-parser": "^6.1.0",
     "playwright": "^1.55.1",
     "rss-parser": "^3.13.0"
   },

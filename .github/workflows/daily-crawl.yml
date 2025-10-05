@@ -40,7 +40,6 @@ jobs:
       - name: Create directories
         run: |
           mkdir -p data
-          mkdir -p .cache
           mkdir -p pdfs
 
       - name: Crawl RSS feeds
@@ -75,21 +74,55 @@ jobs:
       - name: Generate article PDFs
         run: |
           echo "📄 Starting PDF generation..."
+          
+          # Read PDF generation method from config
+          PDF_METHOD=$(node -e "
+            try {
+              const config = JSON.parse(require('fs').readFileSync('config.json'));
+              const enabledMethods = Object.entries(config.pdfGeneration.options)
+                .filter(([key, option]) => option.open === true);
+              if (enabledMethods.length === 0) {
+                console.log('url-to-pdf'); // fallback to default
+              } else {
+                console.log(enabledMethods[0][0]); // use first enabled method
+              }
+            } catch(e) {
+              console.log('url-to-pdf'); // fallback to default
+            }
+          ")
+          
+          echo "🔧 PDF generation method: $PDF_METHOD"
+          
           # Count PDFs before generation
           PDF_COUNT_BEFORE=$(find pdfs/ -name "*.pdf" -type f 2>/dev/null | wc -l || echo "0")
           echo "📊 PDFs before generation: $PDF_COUNT_BEFORE"
 
-          # Generate PDFs
-          npm run url-to-pdf
+          # Generate PDFs based on configuration
+          case "$PDF_METHOD" in
+            "html-to-pdf")
+              echo "📝 Using HTML-to-PDF method..."
+              npm run html-to-pdf
+              ;;
+            "url-to-pdf")
+              echo "🌐 Using URL-to-PDF method..."
+              npm run url-to-pdf
+              ;;
+            *)
+              echo "⚠️ Unknown method '$PDF_METHOD', falling back to url-to-pdf"
+              npm run url-to-pdf
+              ;;
+          esac
 
           # Count PDFs after generation
           PDF_COUNT_AFTER=$(find pdfs/ -name "*.pdf" -type f 2>/dev/null | wc -l || echo "0")
           NEW_PDFS=$((PDF_COUNT_AFTER - PDF_COUNT_BEFORE))
           echo "📊 PDFs after generation: $PDF_COUNT_AFTER"
           echo "📊 New PDFs generated: $NEW_PDFS"
+          echo "🔧 Method used: $PDF_METHOD"
 
-          # Save the count for later use
+          # Save the count and method for later use
           echo "NEW_PDFS=$NEW_PDFS" >> $GITHUB_ENV
+          echo "PDF_METHOD=$PDF_METHOD" >> $GITHUB_ENV
 
       - name: Configure Git
         run: |
@@ -147,7 +180,7 @@ jobs:
           echo "Changes to be committed:"
           git status --short
 
-          git commit -m "📰 Crawl sources & generate PDFs - $ARTICLE_COUNT articles, $NEW_PDFS new PDFs - $TIMESTAMP"
+          git commit -m "📰 Crawl sources & generate PDFs ($PDF_METHOD) - $ARTICLE_COUNT articles, $NEW_PDFS new PDFs - $TIMESTAMP"
 
           # Push changes with retry logic
           echo "Pushing changes..."
@@ -163,6 +196,7 @@ jobs:
       - name: Report status
         run: |
           echo "✅ Source crawling & PDF generation completed successfully!"
+          echo "🔧 PDF generation method used: $PDF_METHOD"
           echo "📊 Final Statistics:"
 
           # Count articles by source group

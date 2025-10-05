@@ -246,7 +246,7 @@ async function crawlFeed(source, stats = null) {
 					title: title,
 					url: url,
 					author: item.author || '',
-					// content: item.content || '',
+					content: item.content || '',
 					pubDate: pubDate.toISOString(),
 					metaDescription: description,
 					crawledAt: new Date().toISOString(),
