@@ -291,17 +291,50 @@ async function htmlToPdf() {
 					const htmlContent = generateHtmlContent(article)
 					console.log(`[2/5] Generated HTML content (${htmlContent.length} characters)`)
 
+					console.log('[3/5] Setting HTML content in browser...')
 					await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' })
-					console.log('[3/5] HTML content set successfully')
+					console.log('[3/5] HTML content loaded successfully')
 
-					// Generate file name
-					const cleanTitle = (article.title || 'untitled').replace(/[^a-zA-Z0-9\-_\s]/g, '_').replace(/\s+/g, '_')
-					const pdfPath = join(sourcePdfDir, `${cleanTitle}.pdf`)
+					// Wait for images to load
+					console.log('[4/5] Waiting for images to load...')
+					try {
+						// Count images first
+						const imageCount = await page.locator('img').count()
+						console.log(`[4/5] Found ${imageCount} images to load`)
+
+						if (imageCount > 0) {
+							// Wait for all images to load with a more robust approach
+							await page.waitForFunction(
+								() => {
+									const images = Array.from(document.querySelectorAll('img'))
+									if (images.length === 0) return true
+
+									return images.every(img => {
+										// Check if image is loaded and has dimensions
+										return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
+									})
+								},
+								{ timeout: 30000 }
+							)
+							console.log('[4/5] All images loaded successfully')
+						} else {
+							console.log('[4/5] No images found in content')
+						}
+					} catch (error) {
+						console.log('[4/5] Some images may not have loaded completely, continuing...')
+						console.log(`[4/5] Error: ${error.message}`)
+					}
+
+					// Generate file name from URL path (same as url-to-pdf.js)
+					const urlObj = new URL(article.url)
+					const filename = urlObj.pathname.split('/').pop() || 'page'
+					const cleanFilename = filename.replace(/[^a-zA-Z0-9\-_]/g, '_')
+					const pdfPath = join(sourcePdfDir, `${cleanFilename}.pdf`)
 
 					// Check if PDF already exists
 					try {
 						await fs.access(pdfPath)
-						console.log(`⏭️ PDF already exists, skipping: ${sourceDomain}/${dateStr}/${cleanTitle}.pdf`)
+						console.log(`⏭️ PDF already exists, skipping: ${sourceDomain}/${dateStr}/${cleanFilename}.pdf`)
 						await page.close()
 						skippedCount++
 						console.log(`✅ Skipped existing PDF ${i + 1}/${sourceArticles.length} from ${sourceDomain}`)
@@ -311,7 +344,7 @@ async function htmlToPdf() {
 					}
 
 					// Generate PDF
-					console.log('[4/5] Generating PDF …')
+					console.log('[5/5] Generating PDF file...')
 					const pdfBuffer = await page.pdf({
 						path: pdfPath,
 						format: 'A4',
@@ -320,7 +353,7 @@ async function htmlToPdf() {
 					})
 
 					console.log('[5/5] PDF generation completed')
-					console.log(`✅ PDF saved: ${sourceDomain}/${dateStr}/${cleanTitle}.pdf (${(pdfBuffer.length / 1024).toFixed(1)} KB)`)
+					console.log(`✅ PDF saved: ${sourceDomain}/${dateStr}/${cleanFilename}.pdf (${(pdfBuffer.length / 1024).toFixed(1)} KB)`)
 					await page.close()
 
 					successCount++

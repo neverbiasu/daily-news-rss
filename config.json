@@ -8,7 +8,7 @@
 				"script": "scripts/html-to-pdf.js"
 			},
 			"url-to-pdf": {
-				"open": true,
+				"open": false,
 				"name": "URL to PDF",
 				"script": "scripts/url-to-pdf.js"
 			}
