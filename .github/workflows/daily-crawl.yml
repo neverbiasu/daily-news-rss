@@ -74,7 +74,7 @@ jobs:
       - name: Generate article PDFs
         run: |
           echo "📄 Starting PDF generation..."
-          
+
           # Read PDF generation method from config
           PDF_METHOD=$(node -e "
             try {
@@ -90,9 +90,9 @@ jobs:
               console.log('url-to-pdf'); // fallback to default
             }
           ")
-          
+
           echo "🔧 PDF generation method: $PDF_METHOD"
-          
+
           # Count PDFs before generation
           PDF_COUNT_BEFORE=$(find pdfs/ -name "*.pdf" -type f 2>/dev/null | wc -l || echo "0")
           echo "📊 PDFs before generation: $PDF_COUNT_BEFORE"
@@ -123,6 +123,41 @@ jobs:
           # Save the count and method for later use
           echo "NEW_PDFS=$NEW_PDFS" >> $GITHUB_ENV
           echo "PDF_METHOD=$PDF_METHOD" >> $GITHUB_ENV
+
+      - name: Upload PDFs to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET_NAME: ${{ secrets.SUPABASE_BUCKET_NAME || 'pdfs' }}
+          PDFS_DIR: ${{ github.workspace }}/pdfs
+        run: |
+          echo "📁 Current workspace: ${{ github.workspace }}"
+          echo "📁 PDF directory: ${{ env.PDFS_DIR }}"
+
+          # Check if PDF directory exists and has files
+          if [ ! -d "${{ env.PDFS_DIR }}" ]; then
+            echo "❌ PDF directory not found: ${{ env.PDFS_DIR }}"
+            exit 1
+          fi
+
+          # Count PDF files
+          PDF_COUNT=$(find "${{ env.PDFS_DIR }}" -name "*.pdf" -type f | wc -l)
+          echo "📄 Total PDF files found: $PDF_COUNT"
+
+          if [ "$PDF_COUNT" -eq 0 ]; then
+            echo "⚠️ No PDF files found to upload"
+            exit 0
+          fi
+
+          # Show some PDF files for verification
+          echo "📄 Sample PDF files:"
+          find "${{ env.PDFS_DIR }}" -name "*.pdf" -type f | head -5
+
+          # Run upload script
+          echo "🚀 Starting PDF upload to Supabase..."
+          npm run upload-pdfs "${{ env.PDFS_DIR }}"
+
+          echo "✅ PDF upload to Supabase completed!"
 
       - name: Configure Git
         run: |
@@ -195,7 +230,7 @@ jobs:
 
       - name: Report status
         run: |
-          echo "✅ Source crawling & PDF generation completed successfully!"
+          echo "✅ Source crawling, PDF generation & Supabase upload completed successfully!"
           echo "🔧 PDF generation method used: $PDF_METHOD"
           echo "📊 Final Statistics:"
 
@@ -238,6 +273,8 @@ jobs:
             echo "   $source: $count PDFs"
           done
 
-# Environment variables for the workflow
-env:
-  ENV_TEST: "test" # a sample variable for testing
+          # Supabase upload summary
+          echo "☁️ Supabase Upload Summary:"
+          echo "   📄 New PDFs generated: $NEW_PDFS"
+          echo "   🔧 Generation method: $PDF_METHOD"
+          echo "   ☁️ Upload status: Completed"

@@ -8,7 +8,8 @@
     "crawl": "node scripts/crawl.js",
     "url-to-pdf": "node scripts/url-to-pdf.js",
     "html-to-pdf": "node scripts/html-to-pdf.js",
-    "check-config": "node scripts/check-config.js"
+    "check-config": "node scripts/check-config.js",
+    "upload-pdfs": "node scripts/upload-pdfs-to-supabase.js"
   },
   "keywords": [
     "ai",
@@ -21,7 +22,8 @@
   "license": "MIT",
   "dependencies": {
     "playwright": "^1.55.1",
-    "rss-parser": "^3.13.0"
+    "rss-parser": "^3.13.0",
+    "@supabase/supabase-js": "^2.39.0"
   },
   "repository": {
     "type": "git",
