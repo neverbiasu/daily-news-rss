@@ -70,6 +70,43 @@ function calculateDuration(start, end) {
 	}
 }
 
+/**
+ * Find existing PDF file in directory recursively
+ * @param {string} directory - directory to search
+ * @param {string} filename - filename to search for
+ * @returns {Promise<string|null>} path to existing file or null
+ */
+async function findExistingPdfInDirectory(directory, filename) {
+	try {
+		if (!fs.existsSync(directory)) {
+			return null
+		}
+
+		const items = await fs.readdir(directory)
+		
+		for (const item of items) {
+			const itemPath = join(directory, item)
+			const stat = await fs.stat(itemPath)
+			
+			if (stat.isDirectory()) {
+				// recursively search subdirectories
+				const found = await findExistingPdfInDirectory(itemPath, filename)
+				if (found) {
+					return found
+				}
+			} else if (item === filename) {
+				// found the file
+				return itemPath
+			}
+		}
+		
+		return null
+	} catch (error) {
+		console.error(`❌ Error searching for PDF: ${error.message}`)
+		return null
+	}
+}
+
 async function urlsToPdf() {
 	const articles = getArticlesFromJson()
 
@@ -92,7 +129,7 @@ async function urlsToPdf() {
 		console.log(`   📰 ${source}: ${articles.length} articles`)
 	})
 
-	// 记录开始时间
+	// record start time
 	const startTime = new Date()
 	console.log(`\n🚀 PDF generation started at: ${formatTimestamp(startTime)}`)
 	console.log(`📋 Processing ${articles.length} articles across ${Object.keys(articlesBySource).length} sources...`)
@@ -223,16 +260,15 @@ async function urlsToPdf() {
 					const cleanFilename = filename.replace(/[^a-zA-Z0-9\-_]/g, '_')
 					const pdfPath = join(sourcePdfDir, `${cleanFilename}.pdf`)
 
-					// Check if PDF already exists
-					try {
-						await fs.access(pdfPath)
-						console.log(`⏭️ PDF already exists, skipping: ${sourceDomain}/${dateStr}/${cleanFilename}.pdf`)
+					// Check if PDF already exists in sourceDomain directory
+					const sourceDomainDir = join(outputDir, sourceDomain)
+					const existingPdfPath = await findExistingPdfInDirectory(sourceDomainDir, `${cleanFilename}.pdf`)
+					if (existingPdfPath) {
+						console.log(`⏭️ PDF already exists, skipping: ${sourceDomain}/${path.relative(sourceDomainDir, existingPdfPath)}`)
 						await page.close()
 						skippedCount++
 						console.log(`✅ Skipped existing PDF ${i + 1}/${sourceArticles.length} from ${sourceDomain}`)
 						continue
-					} catch (error) {
-						// File doesn't exist, continue with PDF generation
 					}
 
 					// Generate PDF
@@ -267,7 +303,7 @@ async function urlsToPdf() {
 
 		await browser.close()
 
-		// 记录结束时间
+		// record end time
 		const endTime = new Date()
 		const totalDuration = calculateDuration(startTime, endTime)
 
