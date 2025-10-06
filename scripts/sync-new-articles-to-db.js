@@ -40,7 +40,11 @@ const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET_NAME = process.env.SUPABASE_BUCKET_NAME || 'pdfs'
 const TABLE_NAME = process.env.SUPABASE_TABLE_NAME || 'test'
-const PDFS_DIR = process.env.PDFS_DIR || process.argv[2] || path.join(__dirname, '..', 'pdfs')
+// parse command-line: treat any arg starting with '-' as a flag; first non-flag arg is pdfs dir
+const argvPositional = process.argv.slice(2).filter(arg => !arg.startsWith('-'))
+const PDFS_DIR = process.env.PDFS_DIR || argvPositional[0] || path.join(__dirname, '..', 'pdfs')
+// dry run flag: set DRY_RUN=true or pass --dry-run (or -d) to the script
+const DRY_RUN = (process.env.DRY_RUN === 'true') || process.argv.includes('--dry-run') || process.argv.includes('-d')
 
 // check environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -289,11 +293,15 @@ async function insertArticleRecord(article, filePath) {
 			filePath: fileUrl  // Store the full URL or path
 		}
 
+		if (DRY_RUN) {
+			console.log('🔬 DRY RUN - would insert record:')
+			console.log(JSON.stringify(record, null, 2))
+			return true
+		}
+
 		const { data, error } = await supabase
 			.from(TABLE_NAME)
-			.upsert(record, {
-				onConflict: 'filePath'
-			})
+			.insert(record)
 
 		if (error) {
 			console.error(`❌ Failed to insert article "${article.title}":`, error.message)
