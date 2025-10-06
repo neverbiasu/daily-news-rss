@@ -284,10 +284,10 @@ async function insertArticleRecord(article, filePath) {
 			id: article.id,
 			title: article.title,
 			author: article.author || null,
-			date_published: article.pubDate,
+			datePublished: article.pubDate,
 			region: region,
 			topic: article.source_category || 'unknown',
-			file_path: fileUrl  // Store the full URL or path
+			filePath: fileUrl  // Store the full URL or path
 		}
 
 		const { data, error } = await supabase
