@@ -186,6 +186,8 @@ function getTemplatePath(sourceDomain) {
 	return join(__dirname, '..', 'templates', templateFilename)
 }
 
+const templateHTMLCache = new Map()
+
 /**
  * Load HTML template from file with caching based on source domain
  * @param {string} sourceDomain - source domain of the article
