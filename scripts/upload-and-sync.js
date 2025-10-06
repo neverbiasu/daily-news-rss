@@ -8,40 +8,13 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// load .env file
-function loadEnvFile() {
-  const envPath = path.join(__dirname, '..', '.env')
-  if (!fs.existsSync(envPath)) {
-    console.log('⚠️ .env file not found, using environment variables only')
-    return
-  }
-
-  const envContent = fs.readFileSync(envPath, 'utf8')
-  const lines = envContent.split('\n')
-
-  for (const line of lines) {
-    const trimmedLine = line.trim()
-    if (trimmedLine && !trimmedLine.startsWith('#')) {
-      const [key, ...valueParts] = trimmedLine.split('=')
-      if (key && valueParts.length > 0) {
-        const value = valueParts.join('=').trim()
-        process.env[key.trim()] = value
-      }
-    }
-  }
-  console.log('✅ .env file loaded successfully')
-}
-
-loadEnvFile()
 
 // config
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET_NAME = process.env.SUPABASE_BUCKET_NAME || 'pdfs'
 const TABLE_NAME = process.env.SUPABASE_TABLE_NAME || 'test'
-const argvPositional = process.argv.slice(2).filter(arg => !arg.startsWith('-'))
-const PDFS_DIR = process.env.PDFS_DIR || argvPositional[0] || path.join(__dirname, '..', 'pdfs')
-const DRY_RUN = (process.env.DRY_RUN === 'true') || process.argv.includes('--dry-run') || process.argv.includes('-d')
+const PDFS_DIR = process.env.PDFS_DIR || path.join(__dirname, '..', 'pdfs')
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('❌ error: please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY')
@@ -208,9 +181,8 @@ async function insertArticleRecord(article, filePath) {
   try {
     const region = extractRegionFromSource(article.source)
     const fileUrl = getFileUrlSync(filePath)
-    const record = { title: article.title, author: article.author || null, datePublished: article.pubDate, region, topic: article.source_category || 'unknown', filePath: fileUrl }
-    if (DRY_RUN) { console.log('🔬 DRY RUN - would insert record:'); console.log(JSON.stringify(record, null, 2)); return true }
-    const { data, error } = await supabase.from(TABLE_NAME).insert(record)
+  const record = { title: article.title, author: article.author || null, datePublished: article.pubDate, region, topic: article.source_category || 'unknown', filePath: fileUrl }
+  const { data, error } = await supabase.from(TABLE_NAME).insert(record)
     if (error) { console.error(`❌ Failed to insert article "${article.title}":`, error.message); return false }
     console.log(`✅ Inserted article: ${article.title}`)
     return true
