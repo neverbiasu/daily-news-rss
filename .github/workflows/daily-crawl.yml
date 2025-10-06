@@ -135,7 +135,7 @@ jobs:
           echo "📁 Current workspace: ${{ github.workspace }}"
           echo "📁 PDF directory: ${{ env.PDFS_DIR }}"
           echo "� Running combined upload-and-sync script..."
-          node scripts/upload-and-sync.js
+          node scripts/upload-pdfs-to-supabase.js
 
       - name: Configure Git
         run: |
