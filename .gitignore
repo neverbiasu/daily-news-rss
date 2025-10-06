@@ -56,3 +56,6 @@ local-test/
 
 # PDF files (ignored locally but included in CI/CD)
 pdfs/ 
+
+# test Output files
+output/

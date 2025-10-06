@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{TITLE}}</title>
+
+    <!-- Google Fonts Import (Changed Merriweather to Bitter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=EB+Garamond:ital,wght@0,400;0,700;1,400&display=swap"
+        rel="stylesheet">
+
+    <style>
+        /* --- Base & Reset --- */
+        :root {
+            --font-header: 'Playfair Display', serif;
+            --font-body: 'EB Garamond', serif;
+            /* Changed from Bitter */
+            --color-text: #000000;
+            --color-text-muted: #6c757d;
+            --color-background: #f8f9fa;
+            --color-surface: #ffffff;
+            --color-accent: #007bff;
+            --color-border: #dee2e6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-body);
+            font-size: 18px;
+            /* Made text slightly smaller */
+            line-height: 1.35;
+            color: var(--color-text);
+            background-color: #262626;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* --- Layout --- */
+        .page-container {
+            max-width: 1080px;
+            margin: auto;
+            padding: 2rem 13rem;
+            background-color: var(--color-surface);
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        @media (max-width: 768px) {
+            body {
+                font-size: 13px;
+            }
+
+            .page-container {
+                margin: 0;
+                padding: 1.5rem;
+                border-radius: 0;
+            }
+        }
+
+        /* --- Typography --- */
+        h1,
+        h2 {
+            font-family: var(--font-header);
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 1rem;
+            margin-top: 3rem;
+        }
+
+        h1 {
+            font-size: 2.8rem;
+            color: #111;
+        }
+
+        h2 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-top: 3rem;
+            padding-bottom: 0.5rem;
+            clear: both;
+        }
+
+        p {
+            margin-bottom: 1rem;
+        }
+
+        /* Retaining link style for potential future use, though none are in the HTML */
+        a {
+            color: var(--color-accent);
+            text-decoration: none;
+            border-bottom: 1px solid rgba(0, 123, 255, 0.3);
+            transition: all 0.2s ease-in-out;
+        }
+
+        a:hover {
+            background-color: rgba(0, 123, 255, 0.1);
+            border-bottom-color: var(--color-accent);
+        }
+
+        /* --- Article Structure --- */
+        .article-header {
+            text-align: left;
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+        }
+
+        .byline {
+            font-family: var(--font-body);
+            font-size: 0.95rem;
+            color: #000;
+            margin-top: 1rem;
+        }
+
+        .byline em {
+            font-style: normal;
+        }
+
+        .article-footer {
+            margin-top: 3rem;
+            padding-top: 1.5rem;
+            font-size: 0.9em;
+            color: var(--color-text-muted);
+        }
+
+
+        /* --- Media: Images, Figures, Video --- */
+        figure {
+            width: fit-content;
+            margin: 1.5rem auto;
+        }
+
+        /* Full-width figures get larger margins */
+        figure:not(.align-right) {
+            margin: 4em 0rem;
+        }
+
+        figure img,
+        figure iframe {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin-left: 0;
+            margin-right: 0;
+            border-radius: 0;
+        }
+
+        figcaption {
+            font-size: 0.85rem;
+            color: #000;
+            text-align: left;
+            margin-top: 0.75rem;
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+            max-width: 70%;
+        }
+
+        .attribution {
+            display: block;
+            font-size: 0.5rem;
+            margin-top: 0.25rem;
+            font-style: italic;
+        }
+
+        /* Specific alignment for floated images */
+        .align-right {
+            float: left;
+            max-width: 45%;
+        }
+
+        @media (max-width: 600px) {
+            .align-right {
+                float: none;
+                max-width: 100%;
+                margin-left: 0;
+            }
+        }
+
+        /* --- Print Styles --- */
+        @media print {
+
+            /* Set margins for each printed page */
+            @page {
+                margin: 1in 1.3in;
+                size: letter;
+            }
+
+            body {
+                background-color: white !important;
+                font-size: 12pt;
+                line-height: 1.4;
+            }
+
+            .page-container {
+                max-width: none !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                /* Remove container padding - @page handles it now */
+                background-color: white !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+            }
+
+            /* Typography adjustments for print */
+            h1 {
+                font-size: 24pt;
+                page-break-after: avoid;
+                margin-top: 0;
+            }
+
+            h2 {
+                font-size: 16pt;
+                page-break-after: avoid;
+                page-break-before: auto;
+                margin-top: 24pt;
+            }
+
+            p {
+                font-size: 12pt;
+                margin-bottom: 12pt;
+                orphans: 3;
+                widows: 3;
+            }
+
+            /* Image handling for print */
+            figure {
+                page-break-inside: avoid;
+                margin: 12pt 0;
+            }
+
+            figure:not(.align-right) {
+                margin: 18pt 0;
+            }
+
+            .align-right {
+                float: right !important;
+                max-width: 40% !important;
+                margin: 0 0 12pt 12pt !important;
+                page-break-inside: avoid;
+            }
+
+            figure img {
+                max-width: 100% !important;
+                height: auto !important;
+            }
+
+            figcaption {
+                font-size: 10pt;
+                margin-top: 6pt;
+                max-width: 100%;
+            }
+
+            .attribution {
+                font-size: 8pt;
+            }
+
+            /* Header and footer adjustments */
+            .article-header {
+                margin-bottom: 24pt;
+                padding-bottom: 12pt;
+                page-break-after: avoid;
+            }
+
+            .byline {
+                font-size: 11pt;
+            }
+
+            .article-footer {
+                margin-top: 24pt;
+                padding-top: 12pt;
+                font-size: 10pt;
+                page-break-before: auto;
+            }
+
+            /* Prevent awkward page breaks */
+            .article-body>p:first-child {
+                page-break-before: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="page-container">
+        <header class="article-header">
+            <h1>{{ARTICLE_TITLE}}</h1>
+            <p class="byline">
+                {{BYLINE}}
+            </p>
+        </header>
+
+        <article class="article-body">
+            {{ARTICLE_CONTENT}}
+        </article>
+
+        <footer class="article-footer">
+            <p>
+                This article is republished from The Conversation under a Creative Commons license.
+            </p>
+        </footer>
+
+    </main>
+
+</body>
+
+</html>

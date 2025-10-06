@@ -108,139 +108,135 @@ async function findExistingPdfInDirectory(directory, filename) {
 }
 
 /**
- * Generate HTML content from article data
+ * Clean HTML content by removing specific tags and attributes
+ * @param {string} htmlContent - raw HTML content
+ * @returns {string} cleaned HTML content
+ */
+function cleanHtmlContent(htmlContent) {
+	if (!htmlContent || typeof htmlContent !== 'string') {
+		return htmlContent || ''
+	}
+
+	let cleanedContent = htmlContent
+
+	// 1. Remove <a> tags but keep their content
+	cleanedContent = cleanedContent.replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
+
+	// 2. Remove <em> tags but keep their content
+	cleanedContent = cleanedContent.replace(/<em\b[^>]*>(.*?)<\/em>/gi, '$1')
+
+	// 3. Remove srcset and sizes attributes from <img> tags
+	cleanedContent = cleanedContent.replace(/<img([^>]*?)\s+srcset="[^"]*"([^>]*?)>/gi, '<img$1$2>')
+	cleanedContent = cleanedContent.replace(/<img([^>]*?)\s+sizes="[^"]*"([^>]*?)>/gi, '<img$1$2>')
+
+	// 4. Remove <figure> tags that contain <iframe> tags
+	cleanedContent = cleanedContent.replace(/<figure[^>]*>[\s\S]*?<iframe[^>]*>[\s\S]*?<\/iframe>[\s\S]*?<\/figure>/gi, '')
+
+	// 5. Hide images with alt="The Conversation" by adding display:none style
+	cleanedContent = cleanedContent.replace(/<img([^>]*?)\s+alt="The Conversation"([^>]*?)>/gi, (match, before, after) => {
+		// Check if style attribute already exists
+		if (before.includes('style=') || after.includes('style=')) {
+			// Add display:none to existing style
+			return match.replace(/style="([^"]*)"/gi, 'style="$1; display:none;"')
+		} else {
+			// Add new style attribute with display:none
+			return `<img${before} style="display:none;"${after}>`
+		}
+	})
+
+	// 6. Add line breaks for better readability
+	cleanedContent = cleanedContent
+		.replace(/<\/p>/gi, '</p>\n') // Add line break after paragraphs
+		.replace(/<\/h2>/gi, '</h2>\n') // Add line break after h2 headings
+		.replace(/<\/h3>/gi, '</h3>\n') // Add line break after h3 headings
+		.replace(/<\/figure>/gi, '</figure>\n') // Add line break after figures
+		.replace(/<\/figcaption>/gi, '</figcaption>\n') // Add line break after figcaptions
+
+	// 7. Clean up any extra whitespace but preserve intentional line breaks
+	cleanedContent = cleanedContent
+		.replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space
+		.replace(/\n\s+/g, '\n') // Remove spaces at start of lines
+		.replace(/\s+\n/g, '\n') // Remove spaces at end of lines
+		.replace(/\n{3,}/g, '\n\n') // Replace 3+ line breaks with 2
+		.trim()
+
+	return cleanedContent
+}
+
+/**
+ * Get template mapping configuration
+ * @returns {Object} template mapping object
+ */
+function getTemplateMapping() {
+	return {
+		'theconversation.com': 'theconversation-article-template.html'
+	}
+}
+
+/**
+ * Get template file path based on source domain
+ * @param {string} sourceDomain - source domain of the article
+ * @returns {string} template file path
+ */
+function getTemplatePath(sourceDomain) {
+	const templateMapping = getTemplateMapping()
+
+	// Get template filename, fallback to default
+	const templateFilename = templateMapping[sourceDomain] || 'default-article-template.html'
+	return join(__dirname, '..', 'templates', templateFilename)
+}
+
+/**
+ * Load HTML template from file with caching based on source domain
+ * @param {string} sourceDomain - source domain of the article
+ * @returns {string} HTML template content
+ */
+function loadHtmlTemplate(sourceDomain) {
+	// Return cached template if available
+	if (templateHTMLCache.has(sourceDomain)) {
+		return templateHTMLCache.get(sourceDomain)
+	}
+
+	try {
+		const templatePath = getTemplatePath(sourceDomain)
+
+		// Check if template file exists
+		if (!fs.existsSync(templatePath)) {
+			throw new Error(`No available template found for ${sourceDomain}`)
+		}
+
+		const template = readFileSync(templatePath, 'utf8')
+		templateHTMLCache.set(sourceDomain, template)
+		console.log(`📄 HTML template loaded and cached for ${sourceDomain}`)
+		return template
+	} catch (error) {
+		console.error(`❌ Failed to load HTML template for ${sourceDomain}:`, error.message)
+		throw error
+	}
+}
+
+/**
+ * Generate HTML content from article data using external template based on source domain
  * @param {Object} article - article object
  * @returns {string} HTML content
  */
 function generateHtmlContent(article) {
-	// Get content from article, fallback to metaDescription if content is not available
-	const articleContent = article.content || article.metaDescription || 'No content available'
+	// Load template based on source domain (cached for better performance)
+	const sourceDomain = article.source_domain || 'unknown'
+	const template = loadHtmlTemplate(sourceDomain)
 
-	// Format publication date
-	const pubDate = article.pubDate
-		? new Date(article.pubDate).toLocaleDateString('en-US', {
-				year: 'numeric',
-				month: 'long',
-				day: 'numeric',
-				hour: '2-digit',
-				minute: '2-digit',
-				timeZone: 'UTC'
-		  }) + ' UTC'
-		: 'Unknown'
+	// Clean the HTML content
+	const rawContent = article.content || article.metaDescription || 'No content available'
+	const articleContent = cleanHtmlContent(rawContent)
 
-	// Format crawled date
-	const crawledDate = article.crawledAt
-		? new Date(article.crawledAt).toLocaleDateString('en-US', {
-				year: 'numeric',
-				month: 'long',
-				day: 'numeric',
-				hour: '2-digit',
-				minute: '2-digit',
-				timeZone: 'UTC'
-		  }) + ' UTC'
-		: 'Unknown'
+	const byline = article.author || 'Unknown Author'
 
-	return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${article.title || 'Untitled'}</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            color: #333;
-            background: #fff;
-        }
-        h1 {
-            color: #2c3e50;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }
-        .meta {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-            font-size: 0.9em;
-            color: #666;
-            border-left: 4px solid #3498db;
-        }
-        .meta strong {
-            color: #2c3e50;
-        }
-        .content {
-            margin-top: 20px;
-            font-size: 16px;
-        }
-        .content p {
-            margin-bottom: 15px;
-        }
-        .content img {
-            max-width: 100%;
-            height: auto;
-            margin: 10px 0;
-        }
-        .content blockquote {
-            border-left: 4px solid #3498db;
-            margin: 20px 0;
-            padding-left: 20px;
-            font-style: italic;
-            color: #666;
-        }
-        .source-link {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-            font-size: 0.9em;
-        }
-        .source-link a {
-            color: #3498db;
-            text-decoration: none;
-            word-break: break-all;
-        }
-        .source-link a:hover {
-            text-decoration: underline;
-        }
-        .article-id {
-            font-size: 0.8em;
-            color: #999;
-            margin-top: 10px;
-        }
-        @media print {
-            body { margin: 0; padding: 15px; }
-            .meta { background: #f0f0f0; }
-            .source-link { page-break-inside: avoid; }
-        }
-    </style>
-</head>
-<body>
-    <h1>${article.title || 'Untitled'}</h1>
-    
-    <div class="meta">
-        <strong>Source:</strong> ${article.source_domain || 'Unknown'}<br>
-        <strong>Category:</strong> ${article.source_category || 'Unknown'}<br>
-        <strong>Published:</strong> ${pubDate}<br>
-        <strong>Author:</strong> ${article.author || 'Unknown'}<br>
-        <strong>Crawled:</strong> ${crawledDate}
-    </div>
-    
-    <div class="content">
-        ${articleContent}
-    </div>
-    
-    <div class="source-link">
-        <strong>Original URL:</strong> <a href="${article.url}">${article.url}</a>
-        <div class="article-id">Article ID: ${article.id || 'N/A'}</div>
-    </div>
-</body>
-</html>`
+	// Replace template placeholders with actual data
+	return template
+		.replace('{{TITLE}}', article.title || 'Untitled Article')
+		.replace('{{ARTICLE_TITLE}}', article.title || 'Untitled Article')
+		.replace('{{BYLINE}}', byline)
+		.replace('{{ARTICLE_CONTENT}}', articleContent)
 }
 
 async function htmlToPdf() {
@@ -326,21 +322,49 @@ async function htmlToPdf() {
 
 					// Generate HTML content
 					const htmlContent = generateHtmlContent(article)
-					console.log(`[2/5] Generated HTML content (${htmlContent.length} characters)`)
+					console.log(`[2/5] Generated HTML content using template for ${sourceDomain} (${htmlContent.length} characters)`)
 
 					console.log('[3/5] Setting HTML content in browser...')
 					await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' })
 					console.log('[3/5] HTML content loaded successfully')
 
+					// Wait for external CSS resources (fonts) to load
+					console.log('[4/5] Waiting for external CSS resources to load...')
+					try {
+						// Wait for all stylesheets to load
+						await page.waitForFunction(
+							() => {
+								const stylesheets = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+								if (stylesheets.length === 0) return true
+
+								const loadedStylesheets = stylesheets.filter(link => {
+									const isLoaded = link.sheet !== null
+									if (!isLoaded) {
+										console.log(`[4/5] Stylesheet still loading: ${link.href}`)
+									}
+									return isLoaded
+								}).length
+
+								console.log(`[4/5] CSS Progress: ${loadedStylesheets}/${stylesheets.length} stylesheets loaded`)
+								return loadedStylesheets === stylesheets.length
+							},
+							{ timeout: 10000 }
+						)
+						console.log('[4/5] All CSS resources loaded successfully')
+					} catch (error) {
+						console.log('[4/5] Some CSS resources may not have loaded completely, continuing...')
+						console.log(`[4/5] CSS Error: ${error.message}`)
+					}
+
 					// Wait for images to load
-					console.log('[4/5] Waiting for images to load...')
+					console.log('[5/5] Waiting for images to load...')
 					try {
 						// Count images first
 						const imageCount = await page.locator('img').count()
-						console.log(`[4/5] Found ${imageCount} images to load`)
+						console.log(`[5/5] Found ${imageCount} images to load`)
 
 						if (imageCount > 0) {
-							console.log('[4/5] Waiting for all images to complete loading...')
+							console.log('[5/5] Waiting for all images to complete loading...')
 							await page.waitForFunction(
 								() => {
 									const images = Array.from(document.querySelectorAll('img'))
@@ -349,23 +373,23 @@ async function htmlToPdf() {
 									const loadedCount = images.filter(img => {
 										const isLoaded = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
 										if (!isLoaded) {
-											console.log(`[4/5] Image still loading: ${img.src}`)
+											console.log(`[5/5] Image still loading: ${img.src}`)
 										}
 										return isLoaded
 									}).length
 
-									console.log(`[4/5] Progress: ${loadedCount}/${images.length} images loaded`)
+									console.log(`[5/5] Progress: ${loadedCount}/${images.length} images loaded`)
 									return loadedCount === images.length
 								},
 								{ timeout: 30000 }
 							)
-							console.log('[4/5] All images loaded successfully')
+							console.log('[5/5] All images loaded successfully')
 						} else {
-							console.log('[4/5] No images found in content')
+							console.log('[5/5] No images found in content')
 						}
 					} catch (error) {
-						console.log('[4/5] Some images may not have loaded completely, continuing...')
-						console.log(`[4/5] Error: ${error.message}`)
+						console.log('[5/5] Some images may not have loaded completely, continuing...')
+						console.log(`[5/5] Error: ${error.message}`)
 					}
 
 					// Generate file name from URL path (same as url-to-pdf.js)
@@ -386,7 +410,7 @@ async function htmlToPdf() {
 					}
 
 					// Generate PDF
-					console.log('[5/5] Generating PDF file...')
+					console.log('[6/6] Generating PDF file...')
 					const pdfBuffer = await page.pdf({
 						path: pdfPath,
 						format: 'A4',
@@ -394,7 +418,7 @@ async function htmlToPdf() {
 						margin: { top: '1cm', bottom: '1cm', left: '1cm', right: '1cm' }
 					})
 
-					console.log('[5/5] PDF generation completed')
+					console.log('[6/6] PDF generation completed')
 					console.log(`✅ PDF saved: ${sourceDomain}/${dateStr}/${cleanFilename}.pdf (${(pdfBuffer.length / 1024).toFixed(1)} KB)`)
 					await page.close()
 
