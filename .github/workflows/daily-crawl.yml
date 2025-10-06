@@ -179,6 +179,27 @@ jobs:
 
           echo "✅ PDF upload to Supabase completed!"
 
+      - name: Sync articles to database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET_NAME: ${{ secrets.SUPABASE_BUCKET_NAME || 'test' }}
+          SUPABASE_TABLE_NAME: ${{ secrets.SUPABASE_TABLE_NAME || 'test' }}
+          PDFS_DIR: ${{ github.workspace }}/pdfs
+        run: |
+          echo "🗄️ Starting sync articles to database..."
+          
+          # Check if required environment variables are set
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "⚠️ Missing Supabase credentials, skipping database sync"
+            exit 0
+          fi
+          
+          # Run sync script
+          node scripts/sync-new-articles-to-db.js
+          
+          echo "✅ Database sync completed!"
+
       - name: Configure Git
         run: |
           git config --global user.email "zl-bot@users.noreply.github.com"
