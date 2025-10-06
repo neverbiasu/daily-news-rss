@@ -1,4 +1,4 @@
-import { promises as fs, readFileSync } from 'fs'
+import { existsSync, promises as fs, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { chromium } from 'playwright'
 import { fileURLToPath } from 'url'
@@ -78,7 +78,7 @@ function calculateDuration(start, end) {
  */
 async function findExistingPdfInDirectory(directory, filename) {
 	try {
-		if (!fs.existsSync(directory)) {
+		if (!existsSync(directory)) {
 			return null
 		}
 
@@ -203,7 +203,7 @@ function loadHtmlTemplate(sourceDomain) {
 		const templatePath = getTemplatePath(sourceDomain)
 
 		// Check if template file exists
-		if (!fs.existsSync(templatePath)) {
+		if (!existsSync(templatePath)) {
 			throw new Error(`No available template found for ${sourceDomain}`)
 		}
 
