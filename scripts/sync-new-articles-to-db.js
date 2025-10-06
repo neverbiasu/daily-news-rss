@@ -281,7 +281,6 @@ async function insertArticleRecord(article, filePath) {
 		const fileUrl = getFileUrl(filePath)
 		
 		const record = {
-			id: article.id,
 			title: article.title,
 			author: article.author || null,
 			datePublished: article.pubDate,
@@ -293,7 +292,7 @@ async function insertArticleRecord(article, filePath) {
 		const { data, error } = await supabase
 			.from(TABLE_NAME)
 			.upsert(record, {
-				onConflict: 'id'
+				onConflict: 'filePath'
 			})
 
 		if (error) {
@@ -311,23 +310,23 @@ async function insertArticleRecord(article, filePath) {
 }
 
 /**
- * Get existing article IDs from database
- * @returns {Promise<Set>} set of existing article IDs
+ * Get existing article file paths from database
+ * @returns {Promise<Set>} set of existing file paths
  */
-async function getExistingArticleIds() {
+async function getExistingFilePaths() {
 	try {
 		const { data, error } = await supabase
 			.from(TABLE_NAME)
-			.select('id')
+			.select('filePath')
 
 		if (error) {
 			console.error('❌ Failed to get existing articles:', error.message)
 			return new Set()
 		}
 
-		const ids = new Set(data.map(row => row.id))
-		console.log(`📊 Found ${ids.size} existing articles in database`)
-		return ids
+		const paths = new Set(data.map(row => row.filePath).filter(Boolean))
+		console.log(`📊 Found ${paths.size} existing articles in database`)
+		return paths
 	} catch (error) {
 		console.error('❌ Error getting existing articles:', error.message)
 		return new Set()
@@ -363,9 +362,9 @@ async function main() {
 	console.log('\n📦 Building cache from Supabase Storage...')
 	const directoryCache = await buildDirectoryCache(pdfFiles)
 
-	// Get existing article IDs from database
+	// Get existing article file paths from database
 	console.log('\n🗄️  Checking existing articles in database...')
-	const existingIds = await getExistingArticleIds()
+	const existingFilePaths = await getExistingFilePaths()
 
 	// Find new articles (PDFs that exist in Supabase Storage but not in database)
 	console.log('\n🔍 Identifying new articles...')
@@ -376,12 +375,15 @@ async function main() {
 		const existsInStorage = checkFileExistsByCache(pdfFile.remotePath, pdfFile.fileName, directoryCache)
 
 		if (existsInStorage) {
+			// Get the file URL to check if it already exists in database
+			const fileUrl = getFileUrl(pdfFile.remotePath)
+			
 			// Match with article data
 			const article = matchArticleByFilename(pdfFile.fileName, articles)
 
 			if (article) {
-				// Check if article already exists in database
-				if (!existingIds.has(article.id)) {
+				// Check if article already exists in database by file path
+				if (!existingFilePaths.has(fileUrl)) {
 					newArticles.push({
 						article: article,
 						filePath: pdfFile.remotePath
