@@ -124,81 +124,18 @@ jobs:
           echo "NEW_PDFS=$NEW_PDFS" >> $GITHUB_ENV
           echo "PDF_METHOD=$PDF_METHOD" >> $GITHUB_ENV
 
-      - name: Upload PDFs to Supabase
+      - name: Upload PDFs and Sync to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_BUCKET_NAME: ${{ secrets.SUPABASE_BUCKET_NAME || 'pdfs' }}
+          SUPABASE_TABLE_NAME: ${{ secrets.SUPABASE_TABLE_NAME || 'test' }}
           PDFS_DIR: ${{ github.workspace }}/pdfs
         run: |
           echo "📁 Current workspace: ${{ github.workspace }}"
           echo "📁 PDF directory: ${{ env.PDFS_DIR }}"
-          
-          # Debug: Check if environment variables are set (without exposing values)
-          echo "🔍 Environment variables check:"
-          if [ -n "$SUPABASE_URL" ]; then
-            echo "✅ SUPABASE_URL is set"
-          else
-            echo "❌ SUPABASE_URL is not set"
-          fi
-          
-          if [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            echo "✅ SUPABASE_SERVICE_ROLE_KEY is set"
-          else
-            echo "❌ SUPABASE_SERVICE_ROLE_KEY is not set"
-          fi
-          
-          if [ -n "$SUPABASE_BUCKET_NAME" ]; then
-            echo "✅ SUPABASE_BUCKET_NAME is set: $SUPABASE_BUCKET_NAME"
-          else
-            echo "⚠️ SUPABASE_BUCKET_NAME is not set, using default: pdfs"
-          fi
-
-          # Check if PDF directory exists and has files
-          if [ ! -d "${{ env.PDFS_DIR }}" ]; then
-            echo "❌ PDF directory not found: ${{ env.PDFS_DIR }}"
-            exit 1
-          fi
-
-          # Count PDF files
-          PDF_COUNT=$(find "${{ env.PDFS_DIR }}" -name "*.pdf" -type f | wc -l)
-          echo "📄 Total PDF files found: $PDF_COUNT"
-
-          if [ "$PDF_COUNT" -eq 0 ]; then
-            echo "⚠️ No PDF files found to upload"
-            exit 0
-          fi
-
-          # Show some PDF files for verification
-          echo "📄 Sample PDF files:"
-          find "${{ env.PDFS_DIR }}" -name "*.pdf" -type f | head -5
-
-          # Run upload script
-          echo "🚀 Starting PDF upload to Supabase..."
-          npm run upload-pdfs "${{ env.PDFS_DIR }}"
-
-          echo "✅ PDF upload to Supabase completed!"
-
-      - name: Sync articles to database
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_BUCKET_NAME: ${{ secrets.SUPABASE_BUCKET_NAME || 'test' }}
-          SUPABASE_TABLE_NAME: ${{ secrets.SUPABASE_TABLE_NAME || 'test' }}
-          PDFS_DIR: ${{ github.workspace }}/pdfs
-        run: |
-          echo "🗄️ Starting sync articles to database..."
-          
-          # Check if required environment variables are set
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            echo "⚠️ Missing Supabase credentials, skipping database sync"
-            exit 0
-          fi
-          
-          # Run sync script
-          node scripts/sync-new-articles-to-db.js
-          
-          echo "✅ Database sync completed!"
+          echo "� Running combined upload-and-sync script..."
+          node scripts/upload-and-sync.js
 
       - name: Configure Git
         run: |
