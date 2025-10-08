@@ -8,261 +8,449 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// load .env file
+function loadEnvFile() {
+	const envPath = path.join(__dirname, '..', '.env')
+	if (!fs.existsSync(envPath)) {
+		console.log('⚠️ .env file not found, using environment variables only')
+		return
+	}
+
+	const envContent = fs.readFileSync(envPath, 'utf8')
+	const lines = envContent.split('\n')
+
+	for (const line of lines) {
+		const trimmedLine = line.trim()
+		if (trimmedLine && !trimmedLine.startsWith('#')) {
+			const [key, ...valueParts] = trimmedLine.split('=')
+			if (key && valueParts.length > 0) {
+				const value = valueParts.join('=').trim()
+				process.env[key.trim()] = value
+			}
+		}
+	}
+	console.log('✅ .env file loaded successfully')
+}
+
+// load environment variables
+loadEnvFile()
 
 // config
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET_NAME = process.env.SUPABASE_BUCKET_NAME || 'pdfs'
-const TABLE_NAME = process.env.SUPABASE_TABLE_NAME || 'test'
-const PDFS_DIR = process.env.PDFS_DIR || path.join(__dirname, '..', 'pdfs')
+const TABLE_NAME = process.env.SUPABASE_TABLE_NAME || 'pdfs'
 
+// PDF path configuration - support environment variable and command line argument
+const PDFS_DIR = process.env.PDFS_DIR || process.argv[2] || path.join(__dirname, '..', 'pdfs')
+
+// check environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('❌ error: please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY')
-  process.exit(1)
+	console.error('❌ error: please set the following environment variables:')
+	console.error('   SUPABASE_URL - your Supabase project URL')
+	console.error('   SUPABASE_SERVICE_ROLE_KEY - Supabase service role key')
+	console.error('   SUPABASE_BUCKET_NAME - bucket name (optional, default is "pdfs")')
+	process.exit(1)
 }
 
+// create Supabase client
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-// --- Helper: get all pdf files ---
+/**
+ * recursively get all PDF files in the directory
+ * @param {string} dir - directory path
+ * @param {string} baseDir - base directory path
+ * @returns {Array} PDF file path array
+ */
 function getAllPdfFiles(dir, baseDir = dir) {
-  const files = []
-  if (!fs.existsSync(dir)) return files
-  const items = fs.readdirSync(dir)
-  for (const item of items) {
-    const fullPath = path.join(dir, item)
-    const stat = fs.statSync(fullPath)
-    if (stat.isDirectory()) {
-      files.push(...getAllPdfFiles(fullPath, baseDir))
-    } else if (path.extname(item).toLowerCase() === '.pdf') {
-      const relativePath = path.relative(baseDir, fullPath)
-      files.push({ localPath: fullPath, remotePath: relativePath.replace(/\\/g, '/'), fileName: item, size: stat.size })
-    }
-  }
-  return files
+	const files = []
+	const items = fs.readdirSync(dir)
+
+	for (const item of items) {
+		const fullPath = path.join(dir, item)
+		const stat = fs.statSync(fullPath)
+
+		if (stat.isDirectory()) {
+			files.push(...getAllPdfFiles(fullPath, baseDir))
+		} else if (path.extname(item).toLowerCase() === '.pdf') {
+			const relativePath = path.relative(baseDir, fullPath)
+			files.push({
+				localPath: fullPath,
+				remotePath: relativePath.replace(/\\/g, '/'), // ensure using forward slash
+				fileName: item, // save original file name
+				size: stat.size
+			})
+		}
+	}
+
+	return files
 }
 
-// --- upload helpers (from upload-pdfs-to-supabase.js) ---
+/**
+ * upload single PDF file to Supabase Storage and insert article info to Database
+ * @param {string} localPath - local file path
+ * @param {string} remotePath - remote file path
+ * @param {Object} articleData - article data from JSON
+ * @returns {Promise<Object>} upload result with file URL
+ */
+async function uploadPdfFile(localPath, remotePath, articleData) {
+	try {
+		console.log(`📤 upload: ${remotePath}`)
+
+		// read file
+		const fileBuffer = fs.readFileSync(localPath)
+
+		// upload to Supabase Storage
+		const { data, error } = await supabase.storage.from(BUCKET_NAME).upload(remotePath, fileBuffer, {
+			contentType: 'application/pdf',
+			upsert: true // if file exists, overwrite
+		})
+
+		if (error) {
+			console.error(`❌ upload failed ${remotePath}:`, error.message)
+			return { success: false, error: error.message }
+		}
+
+		console.log(`✅ upload success: ${remotePath}`)
+
+		// get signed URL for the uploaded file (for private bucket)
+		const { data: urlData, error: urlError } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(remotePath, 60 * 60 * 24 * 365 * 30) // 30 years expiry
+
+		if (urlError) {
+			console.error(`❌ Failed to generate signed URL for ${remotePath}:`, urlError.message)
+			return { success: false, error: urlError.message }
+		}
+
+		const fileUrl = urlData.signedUrl
+		console.log(`🔗 Generated signed URL: ${fileUrl.slice(0, 100)}...`)
+
+		// insert article data to database table
+		let insertResult = null
+		if (articleData) {
+			insertResult = await insertArticleToDatabase(articleData, fileUrl)
+		}
+
+		return {
+			success: true,
+			fileUrl: fileUrl,
+			databaseInsert: insertResult
+		}
+	} catch (error) {
+		console.error(`❌ upload error ${remotePath}:`, error.message)
+		return { success: false, error: error.message }
+	}
+}
+
+/**
+ * insert article data to Supabase Database table
+ * @param {Object} articleData - article data from JSON
+ * @param {string} fileUrl - uploaded PDF file URL
+ * @returns {Promise<Object>} database insert result
+ */
+async function insertArticleToDatabase(articleData, fileUrl) {
+	try {
+		// prepare data for database insertion
+		const dbData = {
+			title: articleData.title || 'untitled',
+			author: articleData.author || 'unknown',
+			datePublished: articleData.pubDate || new Date().toISOString(),
+			region: articleData.source_region,
+			topic: articleData.source_category || 'general',
+			filePath: fileUrl
+		}
+
+		console.log(`📝 inserting to database: ${articleData.id}`)
+
+		// insert to Supabase Database table
+		const { data, error } = await supabase.from(TABLE_NAME).insert([dbData]).select()
+
+		if (error) {
+			console.error(`❌ database insert failed:`, error.message)
+			return { success: false, error: error.message }
+		}
+
+		console.log(`✅ database insert success: ${dbData.title}`)
+		return { success: true, data: data }
+	} catch (error) {
+		console.error(`❌ database insert error:`, error.message)
+		return { success: false, error: error.message }
+	}
+}
+
+/**
+ * find article data by PDF path
+ * @param {string} pdfPath - PDF file path
+ * @param {Object} articlesData - articles data map
+ * @returns {Object|null} article data or null
+ */
+function findArticleDataByPdfPath(pdfPath, articlesData) {
+	// extract filename without extension
+	const fileName = path.basename(pdfPath, '.pdf')
+
+	// try to find article by matching URL path with filename
+	for (const [url, article] of Object.entries(articlesData)) {
+		try {
+			const urlObj = new URL(url)
+			const urlPath = urlObj.pathname.split('/').pop() || 'page'
+			const cleanUrlPath = urlPath.replace(/[^a-zA-Z0-9\-_]/g, '_')
+
+			if (cleanUrlPath === fileName) {
+				return article
+			}
+		} catch (error) {
+			// skip invalid URLs
+			continue
+		}
+	}
+
+	return null
+}
+
+/**
+ * check if bucket exists, if not, create it
+ */
 async function ensureBucketExists() {
-  try {
-    const { data: buckets, error: listError } = await supabase.storage.listBuckets()
-    if (listError) {
-      console.error('❌ get bucket list failed:', listError.message)
-      return false
-    }
-    const bucketExists = buckets.some(b => b.name === BUCKET_NAME)
-    if (!bucketExists) {
-      console.log(`📦 create bucket: ${BUCKET_NAME}`)
-      const { data, error } = await supabase.storage.createBucket(BUCKET_NAME, { public: true, fileSizeLimit: 50 * 1024 * 1024, allowedMimeTypes: ['application/pdf'] })
-      if (error) {
-        console.error('❌ create bucket failed:', error.message)
-        return false
-      }
-      console.log(`✅ create bucket success: ${BUCKET_NAME}`)
-    } else {
-      console.log(`✅ bucket already exists: ${BUCKET_NAME}`)
-    }
-    return true
-  } catch (err) {
-    console.error('❌ check bucket failed:', err.message)
-    return false
-  }
+	try {
+		const { data: buckets, error: listError } = await supabase.storage.listBuckets()
+
+		if (listError) {
+			console.error('❌ get bucket list failed:', listError.message)
+			return false
+		}
+
+		const bucketExists = buckets.some(bucket => bucket.name === BUCKET_NAME)
+
+		if (!bucketExists) {
+			console.log(`📦 create bucket: ${BUCKET_NAME}`)
+			const { data, error } = await supabase.storage.createBucket(BUCKET_NAME, {
+				public: false, // private bucket (recommended for security)
+				fileSizeLimit: 50 * 1024 * 1024, // 50MB file size limit
+				allowedMimeTypes: ['application/pdf']
+			})
+
+			if (error) {
+				console.error('❌ create bucket failed:', error.message)
+				return false
+			}
+
+			console.log(`✅ create bucket success: ${BUCKET_NAME}`)
+		} else {
+			console.log(`✅ bucket already exists: ${BUCKET_NAME}`)
+		}
+
+		return true
+	} catch (error) {
+		console.error('❌ check bucket failed:', error.message)
+		return false
+	}
 }
 
-async function uploadPdfFile(localPath, remotePath) {
-  try {
-    console.log(`📤 upload: ${remotePath}`)
-    const fileBuffer = fs.readFileSync(localPath)
-    const { data, error } = await supabase.storage.from(BUCKET_NAME).upload(remotePath, fileBuffer, { contentType: 'application/pdf', upsert: true })
-    if (error) {
-      console.error(`❌ upload failed ${remotePath}:`, error.message)
-      return false
-    }
-    console.log(`✅ upload success: ${remotePath}`)
-    return true
-  } catch (err) {
-    console.error(`❌ upload error ${remotePath}:`, err.message)
-    return false
-  }
-}
-
-// directory cache used for both upload and sync
+// directory file cache - avoid duplicate API calls
 const directoryCache = new Map()
 
 async function fillDirectoryCache(pdfFiles) {
-  const directoryPaths = new Set()
-  for (const pdfFile of pdfFiles) {
-    const directoryPath = path.dirname(pdfFile.remotePath)
-    if (directoryPaths.has(directoryPath)) continue
-    const { data: files, error } = await supabase.storage.from(BUCKET_NAME).list(directoryPath, { limit: 1000, offset: 0 })
-    if (error) {
-      console.log(`⚠️ directory not found or get failed: ${directoryPath}`)
-      directoryCache.set(directoryPath, [])
-      directoryPaths.add(directoryPath)
-      continue
-    }
-    console.log(`📁 fill cache directory ${directoryPath}: ${files.length} files`)
-    directoryCache.set(directoryPath, files)
-    directoryPaths.add(directoryPath)
-  }
+	const directoryPaths = new Set()
+	for (const pdfFile of pdfFiles) {
+		// extract directory path
+		const directoryPath = path.dirname(pdfFile.remotePath)
+		if (directoryPaths.has(directoryPath)) {
+			continue
+		}
+
+		const { data: files, error } = await supabase.storage.from(BUCKET_NAME).list(directoryPath, {
+			limit: 1000,
+			offset: 0
+		})
+
+		if (error) {
+			console.log(`⚠️ directory not found or get failed: ${directoryPath}`)
+			directoryCache.set(directoryPath, [])
+			directoryPaths.add(directoryPath)
+		}
+
+		// 缓存文件列表
+		console.log(`📁 fill cache directory ${directoryPath}: ${files.length} files`)
+		directoryCache.set(directoryPath, files)
+		directoryPaths.add(directoryPath)
+	}
 }
 
-function checkFileExistsByCache(filePath, fileName) {
-  try {
-    const directoryPath = path.dirname(filePath)
-    if (directoryCache.has(directoryPath)) {
-      const cachedFiles = directoryCache.get(directoryPath)
-      return cachedFiles.some(f => f.name === fileName)
-    }
-    return false
-  } catch (err) {
-    console.error('❌ check file exists failed:', err.message)
-    return false
-  }
+/**
+ * check if file exists (by directory) with caching
+ */
+async function checkFileExistsByCache(filePath, fileName) {
+	try {
+		// extract directory path
+		const directoryPath = path.dirname(filePath)
+
+		// check if the directory file list is already in the cache
+		if (directoryCache.has(directoryPath)) {
+			const cachedFiles = directoryCache.get(directoryPath)
+			return cachedFiles.some(file => file.name === fileName)
+		}
+	} catch (error) {
+		console.error('❌ check file exists failed:', error.message)
+		return false
+	}
 }
 
-// matching helpers (from sync script)
-function matchArticleByFilename(fileName, articles) {
-  try {
-    const cleanName = fileName.replace('.pdf', '').replace(/[_]/g, '-')
-    for (const article of articles) {
-      try {
-        const urlObj = new URL(article.url)
-        const urlPath = urlObj.pathname.split('/').pop() || ''
-        const cleanUrlPath = urlPath.replace(/[^a-zA-Z0-9\-_]/g, '_')
-        if (cleanName === cleanUrlPath || fileName.includes(cleanUrlPath) || cleanUrlPath.includes(cleanName)) {
-          return article
-        }
-      } catch (e) { continue }
-    }
-    return null
-  } catch (err) {
-    console.error('❌ Error matching article:', err.message)
-    return null
-  }
-}
-
-function extractRegionFromSource(sourceName) {
-  try {
-    const sourcesPath = path.join(__dirname, '..', 'sources.json')
-    if (!fs.existsSync(sourcesPath)) return 'unknown'
-    const sourcesData = JSON.parse(fs.readFileSync(sourcesPath, 'utf8'))
-    for (const [key, arr] of Object.entries(sourcesData)) {
-      if (Array.isArray(arr)) {
-        const found = arr.find(s => s.name === sourceName)
-        if (found && found.language) return found.language
-      }
-    }
-    return 'unknown'
-  } catch (err) { console.error('⚠️ Failed to extract region:', err.message); return 'unknown' }
-}
-
-function getFileUrlSync(filePath) {
-  try {
-    const { data: publicData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath)
-    if (publicData && publicData.publicUrl) return publicData.publicUrl
-    return filePath
-  } catch (err) {
-    console.error(`⚠️ Failed to get file URL for ${filePath}:`, err.message)
-    return filePath
-  }
-}
-
-async function getExistingFilePaths() {
-  try {
-    const { data, error } = await supabase.from(TABLE_NAME).select('filePath')
-    if (error) { console.error('❌ Failed to get existing articles:', error.message); return new Set() }
-    const paths = new Set(data.map(r => r.filePath).filter(Boolean))
-    console.log(`📊 Found ${paths.size} existing articles in database`)
-    return paths
-  } catch (err) { console.error('❌ Error getting existing articles:', err.message); return new Set() }
-}
-
-async function insertArticleRecord(article, filePath) {
-  try {
-    const region = extractRegionFromSource(article.source)
-    const fileUrl = getFileUrlSync(filePath)
-  const record = { title: article.title, author: article.author || null, datePublished: article.pubDate, region, topic: article.source_category || 'unknown', filePath: fileUrl }
-  const { data, error } = await supabase.from(TABLE_NAME).insert(record)
-    if (error) { console.error(`❌ Failed to insert article "${article.title}":`, error.message); return false }
-    console.log(`✅ Inserted article: ${article.title}`)
-    return true
-  } catch (err) { console.error('❌ Error inserting article:', err.message); return false }
-}
-
-// Main: upload then sync
+/**
+ * main function
+ */
 async function main() {
-  console.log('🚀 Starting upload-and-sync...')
-  console.log(`📁 PDF directory: ${PDFS_DIR}`)
-  if (!fs.existsSync(PDFS_DIR)) { console.error('❌ PDFs directory not found:', PDFS_DIR); process.exit(1) }
+	console.log('🚀 start upload PDFs to Supabase...')
+	console.log(`📁 bucket: ${BUCKET_NAME}`)
 
-  // list local pdfs
-  const pdfFiles = getAllPdfFiles(PDFS_DIR)
-  console.log(`📄 Found ${pdfFiles.length} PDF files locally`)
-  if (pdfFiles.length === 0) return console.log('ℹ️ No PDF files to upload/sync')
+	// check bucket
+	const bucketReady = await ensureBucketExists()
+	if (!bucketReady) {
+		process.exit(1)
+	}
 
-  // ensure bucket
-  const ok = await ensureBucketExists()
-  if (!ok) process.exit(1)
+	// get PDFs directory path
+	console.log(`📁 PDF directory: ${PDFS_DIR}`)
 
-  // upload files (concurrent batches)
-  const CONCURRENT_LIMIT = 3
-  let uploadSuccess = 0, uploadSkip = 0, uploadFail = 0
+	if (!fs.existsSync(PDFS_DIR)) {
+		console.error('❌ PDFs directory not found:', PDFS_DIR)
+		console.error('💡 You can set PDFS_DIR environment variable or pass directory as argument')
+		console.error('💡 Example: node scripts/upload-pdfs-to-supabase.js /path/to/pdfs')
+		process.exit(1)
+	}
 
-  for (let i = 0; i < pdfFiles.length; i += CONCURRENT_LIMIT) {
-    const batch = pdfFiles.slice(i, i + CONCURRENT_LIMIT)
-    const results = await Promise.all(batch.map(async file => {
-      try {
-        // check if exists in storage cache (we'll fill cache later) - attempt upload anyway with upsert true
-        const res = await uploadPdfFile(file.localPath, file.remotePath)
-        return { success: res }
-      } catch (e) { return { success: false } }
-    }))
-    results.forEach(r => r.success ? uploadSuccess++ : uploadFail++)
-    if (i + CONCURRENT_LIMIT < pdfFiles.length) await new Promise(r => setTimeout(r, 200))
-  }
+	// get all PDF files
+	console.log('🔍 scan PDF files...')
+	const pdfFiles = getAllPdfFiles(PDFS_DIR)
 
-  console.log(`📊 Upload finished. success=${uploadSuccess} failed=${uploadFail}`)
+	if (pdfFiles.length === 0) {
+		console.log('ℹ️  no PDF files found')
+		return
+	} else {
+		console.log(`� found ${pdfFiles.length} PDF files`)
+	}
 
-  // Build directory cache for sync
-  await fillDirectoryCache(pdfFiles)
+	// load article data from JSON
+	console.log('📖 loading article data...')
 
-  // Load articles and existing DB paths
-  const articles = (function(){
-    try { const p = path.join(__dirname, '..', 'data', 'latest-raw.json'); return JSON.parse(fs.readFileSync(p,'utf8')).articles || [] } catch(e){ return [] }
-  })()
-  console.log(`✅ Loaded ${articles.length} articles from latest-raw.json`)
+	// { article url : article data for latest-raw.json }
+	let articlesData = {}
+	try {
+		const jsonPath = path.join(__dirname, '..', 'data', 'latest-raw.json')
+		if (fs.existsSync(jsonPath)) {
+			const jsonData = fs.readFileSync(jsonPath, 'utf8')
+			const data = JSON.parse(jsonData)
+			if (data.articles && Array.isArray(data.articles)) {
+				// create a map of articles by URL for quick lookup
+				articlesData = data.articles.reduce((acc, article) => {
+					// use URL as key for lookup
+					acc[article.url] = article
+					return acc
+				}, {})
+				console.log(`📚 loaded ${Object.keys(articlesData).length} articles from JSON`)
+			}
+		} else {
+			console.log('⚠️  no article data found, will skip database insertion')
+		}
+	} catch (error) {
+		console.error('❌ failed to load article data:', error.message)
+		console.log('⚠️  will skip database insertion')
+	}
 
-  const existingFilePaths = await getExistingFilePaths()
+	// fill directory cache to check if file exist
+	await fillDirectoryCache(pdfFiles)
 
-  // identify new articles
-  const newArticles = []
-  for (const pdfFile of pdfFiles) {
-    const existsInStorage = checkFileExistsByCache(pdfFile.remotePath, pdfFile.fileName)
-    if (!existsInStorage) continue
-    const fileUrl = getFileUrlSync(pdfFile.remotePath)
-    const article = matchArticleByFilename(pdfFile.fileName, articles)
-    if (article && !existingFilePaths.has(fileUrl)) newArticles.push({ article, filePath: pdfFile.remotePath })
-  }
+	// concurrent control configuration
+	const CONCURRENT_LIMIT = 3 // at most 3 files at a time
+	const DELAY_BETWEEN_BATCHES = 200 // delay between batches 200ms
 
-  console.log(`📊 Found ${newArticles.length} new articles to insert`)
+	// upload files
+	let successCount = 0
+	let skipCount = 0
+	let errorCount = 0
 
-  let successCount = 0, failCount = 0
-  for (let i = 0; i < newArticles.length; i++) {
-    const { article, filePath } = newArticles[i]
-    const ok = await insertArticleRecord(article, filePath)
-    if (ok) {
-      successCount++
-    } else {
-      failCount++
-    }
-    if (i < newArticles.length - 1) await new Promise(r => setTimeout(r, 100))
-  }
+	console.log(`🚀 start batch upload... (concurrent limit: ${CONCURRENT_LIMIT})`)
 
-  console.log('\n📊 Sync Summary:')
-  console.log(`✅ Successfully inserted: ${successCount} articles`)
-  console.log(`❌ Failed to insert: ${failCount} articles`)
-  console.log(`📄 Total new articles: ${newArticles.length}`)
-  console.log('🎉 upload-and-sync completed!')
+	// batch process files
+	for (let i = 0; i < pdfFiles.length; i += CONCURRENT_LIMIT) {
+		const batch = pdfFiles.slice(i, i + CONCURRENT_LIMIT)
+		const batchNumber = Math.floor(i / CONCURRENT_LIMIT) + 1
+		const totalBatches = Math.ceil(pdfFiles.length / CONCURRENT_LIMIT)
+
+		console.log(`\n📦 process batch ${batchNumber}/${totalBatches} (${batch.length} files):`)
+
+		// concurrent process current batch
+		const batchPromises = batch.map(async (file, index) => {
+			const fileIndex = i + index + 1
+			console.log(`📄 process file ${fileIndex}/${pdfFiles.length}: ${file.fileName}`)
+
+			try {
+				// use directory check method with cache
+				const fileExists = await checkFileExistsByCache(file.remotePath, file.fileName)
+				if (fileExists) {
+					console.log(`⏭️  skip existing file: ${file.remotePath}`)
+					console.log(`   � file already exists in the directory, skip upload`)
+					return { success: false, skip: true, error: false }
+				}
+
+				// find corresponding article data
+				const articleData = findArticleDataByPdfPath(file.remotePath, articlesData)
+				if (!articleData) {
+					console.log(`⚠️  no article data found for: ${file.fileName}`)
+				}
+
+				console.log(`📤 uploading: ${file.remotePath}`)
+				const result = await uploadPdfFile(file.localPath, file.remotePath, articleData)
+				if (result.success) {
+					console.log(`✅ upload success: ${file.fileName}`)
+					if (result.databaseInsert && result.databaseInsert.success) {
+						console.log(`✅ database insert success: ${file.fileName}`)
+					} else if (result.databaseInsert && !result.databaseInsert.success) {
+						console.log(`⚠️  database insert failed: ${file.fileName}`)
+					}
+					return { success: true, skip: false, error: false }
+				} else {
+					console.log(`❌ upload failed: ${file.fileName}`)
+					return { success: false, skip: false, error: true }
+				}
+			} catch (error) {
+				console.error(`❌ process file error ${file.fileName}:`, error.message)
+				return { success: false, skip: false, error: true }
+			}
+		})
+
+		// wait for current batch to complete
+		const batchResults = await Promise.all(batchPromises)
+
+		// statistics current batch result
+		batchResults.forEach(result => {
+			if (result.success) successCount++
+			else if (result.skip) skipCount++
+			else if (result.error) errorCount++
+		})
+
+		// delay between batches (except the last batch)
+		if (i + CONCURRENT_LIMIT < pdfFiles.length) {
+			console.log(`⏳ delay between batches ${DELAY_BETWEEN_BATCHES}ms...`)
+			await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES))
+		}
+	}
+
+	// output result statistics
+	console.log('\n📊 upload completed statistics:')
+	console.log(`✅ success upload: ${successCount} files`)
+	console.log(`⏭️  skip files: ${skipCount} files`)
+	console.log(`❌ failed files: ${errorCount} files`)
+	console.log(`📄 total files: ${pdfFiles.length} files`)
+
+	if (errorCount > 0) {
+		console.log('\n⚠️  some files upload failed, please check the error information')
+		process.exit(1)
+	} else {
+		console.log('\n🎉 all files upload completed!')
+	}
 }
 
-main().catch(err => { console.error('❌ upload-and-sync failed:', err); process.exit(1) })
+// run main function
+main().catch(error => {
+	console.error('❌ program execution failed:', error)
+	process.exit(1)
+})
